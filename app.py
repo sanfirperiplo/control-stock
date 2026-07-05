@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 
-# Configuración óptima para ordenadores y pantallas de iPhone
+# Configuración de página adaptada para PC y iPhone
 st.set_page_config(
     page_title="Control de Stock - Folletos",
     page_icon="📊",
@@ -9,7 +9,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Estilos visuales adaptados a móviles
+# Estilos limpios para el móvil
 st.markdown("""
     <style>
     .main .block-container { padding-top: 1.5rem; padding-bottom: 2rem; }
@@ -19,8 +19,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 Control de Roturas de Stock")
-st.write("Versión optimizada: Formato ordenado iniciando por el **Código de Barras (EAN)**.")
+st.title("📊 Generador de Fichero de Roturas")
+st.write("Sube los archivos para extraer el listado formateado listo para revisión.")
 
 st.subheader("📁 1. Cargar Archivos")
 file_folleto = st.file_uploader("Sube el Fichero del Folleto (SMS CON FOTO...)", type=["xlsx", "csv"], key="folleto")
@@ -28,78 +28,73 @@ file_stock = st.file_uploader("Sube el Fichero de Stock (010...)", type=["xlsx",
 
 if file_folleto and file_stock:
     try:
-        # Leer archivos soportando CSV y Excel
+        # Leer ficheros (soporta Excel y CSV)
         df_folleto = pd.read_excel(file_folleto) if file_folleto.name.endswith('.xlsx') else pd.read_csv(file_folleto)
         df_stock = pd.read_excel(file_stock) if file_stock.name.endswith('.xlsx') else pd.read_csv(file_stock)
 
-        # Limpiar espacios en los encabezados
+        # Limpiar espacios en los encabezados de las columnas
         df_folleto.columns = df_folleto.columns.str.strip()
         df_stock.columns = df_stock.columns.str.strip()
 
         st.success("¡Ficheros cargados con éxito!")
 
-        # Cruzar usando la columna común 'ID'
+        # Validar que ambos tienen la columna clave 'ID'
         if 'ID' in df_folleto.columns and 'ID' in df_stock.columns:
             
-            # Forzar el mismo formato en los IDs para que coincidan perfectamente
+            # Homologar el formato del ID para el cruce
             df_folleto['ID'] = df_folleto['ID'].astype(str).str.strip()
             df_stock['ID'] = df_stock['ID'].astype(str).str.strip()
-            
-            # Seleccionamos las columnas clave del archivo de stock (ID, EAN y Stock Disponible)
-            col_stock_disp = 'Stock Disp' if 'Stock Disp' in df_stock.columns else df_stock.columns[-1]
-            col_ean = 'EAN' if 'EAN' in df_stock.columns else df_stock.columns[0]
-            
-            df_stock_clean = df_stock[['ID', col_ean, col_stock_disp]].copy()
-            df_stock_clean.columns = ['ID', 'Código de Barras (EAN)', 'Stock Disponible']
-            
-            # Cruzar datos (Traer el EAN y el Stock al folleto)
-            df_analisis = pd.merge(df_folleto, df_stock_clean, on='ID', how='left')
-            df_analisis['Stock Disponible'] = df_analisis['Stock Disponible'].fillna(0)
-            df_analisis['Código de Barras (EAN)'] = df_analisis['Código de Barras (EAN)'].fillna('No encontrado').astype(str)
 
-            # Detectar roturas (Stock menor o igual a 0)
-            df_roturas = df_analisis[df_analisis['Stock Disponible'] <= 0].copy()
-
-            # --- REORGANIZAR COLUMNAS PARA EMPEZAR POR EL CÓDIGO DE BARRAS ---
-            # Ponemos 'Código de Barras (EAN)' al principio de todo
-            columnas_ordenadas = ['Código de Barras (EAN)', 'ID']
+            # Columnas requeridas del archivo de stock (010) según tu formato solicitado
+            columnas_stock_necesarias = ['ID', 'EAN', 'Descripción Artículo', 'PVP normal', 'Stock Disp']
             
-            # Añadir el resto de columnas del folleto originales automáticamente
-            for col in df_folleto.columns:
-                if col != 'ID' and col in df_analisis.columns:
-                    columnas_ordenadas.append(col)
+            # Verificar que existan en el archivo de stock
+            missing_cols = [col for col in columnas_stock_necesarias if col not in df_stock.columns]
             
-            # Añadir la columna del stock al final
-            columnas_ordenadas.append('Stock Disponible')
-            
-            # Aplicamos el nuevo formato ordenado
-            df_roturas_formateado = df_roturas[columnas_ordenadas]
+            if not missing_cols:
+                # Filtrar solo el stock del archivo 010 donde haya rotura (Stock Disp <= 0)
+                # Nota: Si una celda está vacía en Stock Disp, la consideramos como 0
+                df_stock['Stock Disp'] = pd.to_numeric(df_stock['Stock Disp'], errors='coerce').fillna(0)
+                df_stock_roturas = df_stock[df_stock['Stock Disp'] <= 0].copy()
 
-            # --- PRESENTACIÓN DE RESULTADOS ---
-            st.subheader("📊 2. Resumen de Alertas")
-            c1, c2 = st.columns(2)
-            c1.metric("Artículos analizados", len(df_folleto))
-            c2.metric("Roturas Detectadas 🚨", len(df_roturas), delta_color="inverse")
+                # Asegurar formato limpio para el código de barras (EAN) sin exponenciales ni decimales
+                df_stock_roturas['EAN'] = df_stock_roturas['EAN'].astype(str).str.replace('.0', '', regex=False).str.strip()
 
-            st.subheader("📋 3. Listado de Productos Agotados")
-            if not df_roturas_formateado.empty:
-                # Mostrar tabla optimizada en pantalla
-                st.dataframe(df_roturas_formateado, use_container_width=True, hide_index=True)
-                
-                # Generar el archivo final formateado para descarga (Funciona directo en iPhone y PC)
-                csv = df_roturas_formateado.to_csv(index=False, sep=';').encode('utf-8-sig')
-                st.download_button(
-                    label="📥 Descargar Fichero de Roturas (EAN Primero)",
-                    data=csv,
-                    file_name="roturas_codigo_barras_primero.csv",
-                    mime="text/csv",
-                )
+                # Cruzar con el folleto para asegurarnos de extraer SOLO los que están en promoción activa
+                df_final_roturas = pd.merge(df_folleto[['ID']], df_stock_roturas[columnas_stock_necesarias], on='ID', how='inner')
+
+                # Reordenar las columnas exactamente al formato solicitado en la imagen
+                # Formato: EAN | ID | Descripción Artículo | PVP normal | Stock Disp
+                df_formato_solicitado = df_final_roturas[['EAN', 'ID', 'Descripción Artículo', 'PVP normal', 'Stock Disp']]
+
+                # --- MOSTRAR RESULTADOS ---
+                st.subheader("📊 2. Resumen de Alertas")
+                c1, c2 = st.columns(2)
+                c1.metric("Artículos en Folleto", len(df_folleto))
+                c2.metric("Roturas de Folleto 🚨", len(df_formato_solicitado), delta_color="inverse")
+
+                st.subheader("📋 3. Vista Previa del Fichero de Roturas")
+                if not df_formato_solicitado.empty:
+                    # Mostrar la tabla en la app (PC/Móvil)
+                    st.dataframe(df_formato_solicitado, use_container_width=True, hide_index=True)
+                    
+                    # Guardar en CSV estructurado con punto y coma (;) para que Excel lo abra perfecto
+                    csv_data = df_formato_solicitado.to_csv(index=False, sep=';', encoding='utf-8-sig')
+                    
+                    st.download_button(
+                        label="📥 Descargar Fichero de Roturas Formateado",
+                        data=csv_data,
+                        file_name="roturas_folleto_formato_final.csv",
+                        mime="text/csv",
+                    )
+                else:
+                    st.success("✅ ¡Todo en orden! Todos los artículos del folleto tienen Stock Disp mayor a 0.")
             else:
-                st.success("✅ ¡Todo excelente! Todos los artículos del folleto tienen existencias disponibles.")
+                st.error(f"❌ El archivo de stock (010) no contiene todas las columnas requeridas. Faltan: {missing_cols}")
         else:
-            st.error("❌ Error: No se encontró la columna 'ID' en alguno de los archivos para poder vincularlos.")
+            st.error("❌ Error: No se encontró la columna 'ID' en alguno de los dos archivos para poder cruzarlos.")
             
     except Exception as e:
-        st.error(f"Error procesando el formato de los ficheros: {e}")
+        st.error(f"Ocurrió un error en el procesado: {e}")
 else:
-    st.info("💡 Sube tus dos archivos modificados para generar de inmediato el fichero con el Código de Barras en la primera columna.")
+    st.info("💡 Sube ambos ficheros para generar automáticamente el documento con la estructura de 5 columnas solicitada.")a columna.")
