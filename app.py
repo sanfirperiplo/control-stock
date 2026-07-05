@@ -125,7 +125,6 @@ if file_folleto and file_stock:
             st.subheader("📊 2. Resumen de Alertas")
             c1, c2 = st.columns(2)
             c1.metric("Artículos en Folleto", len(df_folleto['ID_limpio'].unique()))
-            # Nombre modificado aquí: Eliminado "(Stock <= 2)"
             c2.metric("Roturas de Folleto 🚨", len(df_formato_pantalla), delta_color="inverse")
 
             st.subheader("📋 3. Vista Previa del Fichero de Roturas")
@@ -167,32 +166,41 @@ if file_folleto and file_stock:
                     </tr>
                     """
 
-                # Documento HTML final para imprimir
-                html_impresion = f"""
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="utf-8">
-                    <title>INFORME COMPLETADO DE ROTURAS</title>
-                    <link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+128&display=swap" rel="stylesheet">
-                    <style>
-                        body {{ font-family: 'Helvetica Neue', Arial, sans-serif; padding: 10px; color: #333; }}
-                        .header-container {{ text-align: center; margin-bottom: 25px; border-bottom: 3px solid #1E3A8A; padding-bottom: 10px; }}
-                        h2 {{ color: #1E3A8A; margin: 0; font-size: 20px; text-transform: uppercase; }}
-                        p.sub {{ font-size: 14px; color: #666; margin: 5px 0 0 0; }}
-                        table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
-                        th {{ background-color: #1E3A8A; color: white; padding: 10px 4px; text-align: left; font-size: 11px; text-transform: uppercase; }}
-                        td {{ padding: 8px 4px; border-bottom: 1px solid #E5E7EB; font-size: 11px; vertical-align: middle; }}
-                        tr:nth-child(even) {{ background-color: #F9FAFB; }}
-                        .barcode-cell {{ 
-                            font-family: 'Libre Barcode 128', sans-serif; 
-                            font-size: 44px; 
-                            padding: 0px 4px; 
-                            line-height: 1; 
-                            letter-spacing: 0px;
-                            white-space: nowrap;
-                        }}
-                    </style>
-                </head>
-                <body>
-                    <div class="header-container
+                # Documento HTML estructurado de forma segura sin strings anidadas problemáticas
+                html_cabecera = """<!DOCTYPE html><html><head><meta charset="utf-8"><title>INFORME COMPLETADO DE ROTURAS</title><link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+128&display=swap" rel="stylesheet"><style>body { font-family: 'Helvetica Neue', Arial, sans-serif; padding: 10px; color: #333; } .header-container { text-align: center; margin-bottom: 25px; border-bottom: 3px solid #1E3A8A; padding-bottom: 10px; } h2 { color: #1E3A8A; margin: 0; font-size: 20px; text-transform: uppercase; } p.sub { font-size: 14px; color: #666; margin: 5px 0 0 0; } table { width: 100%; border-collapse: collapse; margin-top: 10px; } th { background-color: #1E3A8A; color: white; padding: 10px 4px; text-align: left; font-size: 11px; text-transform: uppercase; } td { padding: 8px 4px; border-bottom: 1px solid #E5E7EB; font-size: 11px; vertical-align: middle; } tr:nth-child(even) { background-color: #F9FAFB; } .barcode-cell { font-family: 'Libre Barcode 128', sans-serif; font-size: 44px; padding: 0px 4px; line-height: 1; letter-spacing: 0px; white-space: nowrap; }</style></head><body><div class="header-container"><h2>📋 INFORME COMPLETADO DE ROTURAS</h2>"""
+                html_cuerpo = f"""<p class="sub">Total alertas detectadas para revisión: <b>{len(df_roturas)}</b></p></div><table><thead><tr><th style="width: 18%;">CÓDIGO BARRAS (PANCHAR)</th><th>EAN</th><th>ID</th><th>DESCRIPCIÓN ARTÍCULO</th><th style="text-align: right;">PVP</th><th style="text-align: center;">STOCK</th><th style="text-align: center;">UDS/CAJA</th><th style="text-align: center;">FAP</th><th>UBICACIÓN</th><th>PROMOCIÓN</th></tr></thead><tbody>{filas_html}</tbody></table>"""
+                html_cierre = """<script>window.onload = function() { setTimeout(function() { window.print(); }, 500); };</script></body></html>"""
+                
+                html_impresion = html_cabecera + html_cuerpo + html_cierre
+
+                # Inyección 100% segura usando base64 para evitar que Streamlit analice caracteres extraños
+                import base64
+                html_b64 = base64.b64encode(html_impresion.encode('utf-8')).decode('utf-8')
+
+                st.components.v1.html(f"""
+                    <html>
+                    <body>
+                        <button onclick="abrirInforme()" style="display: block; width: 100%; background-color: #1E3A8A; color: white; text-align: center; padding: 14px; font-size: 16px; font-weight: bold; border-radius: 10px; font-family: Arial, sans-serif; border: none; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                           🖨️ IMPRIMIR / VER INFORME COMPLETO CON CÓDIGOS DE BARRAS
+                        </button>
+                        <script>
+                            function abrirInforme() {{
+                                var ventana = window.open('', '_blank');
+                                var contenido = atob("{html_b64}");
+                                ventana.document.write(contenido);
+                                ventana.document.close();
+                            }}
+                        </script>
+                    </body>
+                    </html>
+                """, height=65)
+
+            else:
+                st.success("✅ ¡Todo en orden! Ningún artículo del folleto tiene un Stock Disponible crítico.")
+        else:
+            st.error("❌ Error: No se encontraron las columnas obligatorias necesarias (ID, EAN, Descripción, PVP normal o Stock Disp) en los ficheros.")
+            
+    except Exception as e:
+        st.error(f"Ocurrió un error en el procesado técnico: {e}")
+else:
+    st.info("💡 Sube ambos ficheros para generar automáticamente el documento con la estructura solicitada.")
