@@ -281,3 +281,38 @@ if ejecutar_procesado:
                     html_parts.append('<td>' + str(fila['EAN_Limpiado']) + '</td>')
                     html_parts.append('<td>' + str(fila['ID_Final']) + '</td>')
                     html_parts.append('<td>' + str(fila[col_desc]) + '</td>')
+                    html_parts.append('<td style="text-align: right; font-weight: 600;">' + str(fila[col_pvp]) + '</td>')
+                    html_parts.append('<td style="text-align: center; font-weight: bold; color: #DC2626; background-color: #FEF2F2;">' + str(int(fila['Stock_Numerico'])) + '</td>')
+                    html_parts.append('<td style="text-align: center; font-weight: 600; color: #1E3A8A;">' + str(fila['PCB_val']) + '</td>')
+                    html_parts.append('<td style="text-align: center;">' + str(fila['FAP_val']) + '</td>')
+                    html_parts.append('<td>' + str(fila['UBI_val']) + '</td>')
+                    html_parts.append('<td style="font-size: 10px; color: #2563EB; font-weight: 500;">' + str(fila['PROMO_val']) + '</td>')
+                    html_parts.append('</tr>')
+
+                html_parts.append('</tbody></table>')
+                html_parts.append('<script>window.onload = function() { setTimeout(function() { window.print(); }, 500); };</script>')
+                html_parts.append('</body></html>')
+
+                html_impresion = "".join(html_parts)
+                html_b64 = base64.b64encode(html_impresion.encode('utf-8')).decode('utf-8')
+
+                st.components.v1.html(f"""
+                    <html>
+                    <body>
+                        <button onclick="abrirInforme()" style="display: block; width: 100%; background: linear-gradient(135deg, #10B981 0%, #059669 100%); color: white; text-align: center; padding: 14px; font-size: 15px; font-weight: bold; border-radius: 12px; font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif; border: none; cursor: pointer; box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.2); transition: all 0.2s ease;">
+                           🖨️ IMPRIMIR LISTADO CON CÓDIGOS DE BARRAS
+                        </button>
+                        <script>
+                            function abrirInforme() {{
+                                var ventana = window.open('', '_blank');
+                                var contenido = atob("{html_b64}");
+                                ventana.document.write(contenido);
+                                ventana.document.close();
+                            }}
+                        </script>
+                    </body>
+                    </html>
+                """, height=65)
+
+    except Exception as e:
+        st.error(f"Error técnico durante el procesado: {e}")
