@@ -41,33 +41,38 @@ if file_folleto and file_stock:
         # Validar que ambos tienen la columna clave 'ID'
         if 'ID' in df_folleto.columns and 'ID' in df_stock.columns:
             
-            # --- NORMALIZACIÓN BLINDADA DE IDs ---
+            # --- NORMALIZACIÓN DE IDs ---
+            # Pasamos a texto limpio quitando decimales ocultos (.0) para asegurar el cruce
             df_folleto['ID'] = pd.to_numeric(df_folleto['ID'], errors='coerce').fillna(-1).astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
             df_stock['ID'] = pd.to_numeric(df_stock['ID'], errors='coerce').fillna(-2).astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
 
-            # Columnas requeridas que DEBEN existir en el archivo de stock (010)
+            # Columnas requeridas del archivo 010
             columnas_stock_necesarias = ['ID', 'EAN', 'Descripción Artículo', 'PVP normal', 'Stock Disp']
             
             # Verificar que existan en el archivo de stock
             missing_cols = [col for col in columnas_stock_necesarias if col not in df_stock.columns]
             
             if not missing_cols:
-                # Filtrar solo el stock del archivo 010 donde haya rotura (Stock Disp <= 0)
+                # --- CORRECCIÓN CRÍTICA DE STOCK ---
+                # Convertimos 'Stock Disp' a número. Si está vacío (NaN) o da error, lo convertimos en 0 de forma automática.
                 df_stock['Stock Disp'] = pd.to_numeric(df_stock['Stock Disp'], errors='coerce').fillna(0)
-                df_stock_roturas = df_stock[df_stock['Stock Disp'] <= 0].copy()
 
-                # Limpieza estricta del EAN (Código de barras) para evitar exponenciales y decimales
-                df_stock_roturas['EAN'] = pd.to_numeric(df_stock_roturas['EAN'], errors='coerce').fillna(0).astype(int).astype(str).str.strip()
+                # Limpieza estricta del EAN (Código de barras) para evitar formatos raros en pantalla
+                df_stock['EAN'] = pd.to_numeric(df_stock['EAN'], errors='coerce').fillna(0).astype(int).astype(str).str.strip()
 
-                # Cruzar con el folleto para extraer ÚNICAMENTE los artículos que están en el folleto activo
-                df_final_roturas = pd.merge(df_folleto[['ID']], df_stock_roturas[columnas_stock_necesarias], on='ID', how='inner')
+                # Cruzar primero el folleto completo con los datos de stock
+                df_cruce = pd.merge(df_folleto[['ID']], df_stock[columnas_stock_necesarias], on='ID', how='inner')
+                
+                # Eliminar duplicados si un artículo viene repetido
+                df_cruce = df_cruce.drop_duplicates(subset=['ID'])
 
-                # Eliminar posibles filas duplicadas si un artículo aparece repetido en los listados
-                df_final_roturas = df_final_roturas.drop_duplicates(subset=['ID'])
+                # --- CORRECCIÓN DEL FILTRO DE ROTURAS ---
+                # Extraemos los artículos cuyo stock disponible sea menor o igual a 0
+                df_formato_solicitado = df_cruce[df_cruce['Stock Disp'] <= 0].copy()
 
-                # Reordenar las columnas exactamente al formato de 5 columnas solicitado
+                # Reordenar las columnas al formato exacto solicitado de 5 columnas
                 # Formato: EAN | ID | Descripción Artículo | PVP normal | Stock Disp
-                df_formato_solicitado = df_final_roturas[['EAN', 'ID', 'Descripción Artículo', 'PVP normal', 'Stock Disp']]
+                df_formato_solicitado = df_formato_solicitado[['EAN', 'ID', 'Descripción Artículo', 'PVP normal', 'Stock Disp']]
 
                 # --- MOSTRAR RESULTADOS ---
                 st.subheader("📊 2. Resumen de Alertas")
@@ -76,11 +81,11 @@ if file_folleto and file_stock:
                 c2.metric("Roturas de Folleto 🚨", len(df_formato_solicitado), delta_color="inverse")
 
                 st.subheader("📋 3. Vista Previa del Fichero de Roturas")
-                if not df_formato_solicitado.empty:
-                    # Mostrar la tabla en la app limpia SIN comillas
+                if len(df_formato_solicitado) > 0:
+                    # Mostrar la tabla limpia en pantalla de forma nativa y perfecta
                     st.dataframe(df_formato_solicitado, use_container_width=True, hide_index=True)
                     
-                    # Preparación especial para la descarga (convertimos el EAN en formato texto nativo de CSV)
+                    # Preparación exclusiva para la descarga en Excel (Truco del formateo de celdas largas)
                     df_descarga = df_formato_solicitado.copy()
                     df_descarga['EAN'] = df_descarga['EAN'].apply(lambda x: f"'\t{x}")
                     
