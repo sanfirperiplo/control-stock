@@ -114,7 +114,7 @@ if file_folleto and file_stock:
             df_roturas['UBI_val'] = df_roturas[col_ubi].fillna('-').astype(str) if col_ubi else '-'
             df_roturas['PROMO_val'] = df_roturas[col_promo].fillna('-').astype(str) if col_promo else '-'
 
-            # Formato de visualización plano en la web (5 columnas)
+            # Formato de visualización plano en la web (5 columnas para mantener limpia la interfaz móvil)
             df_formato_pantalla = pd.DataFrame({
                 'EAN': df_roturas['EAN_Limpiado'],
                 'ID': df_roturas['ID_Final'],
@@ -137,23 +137,12 @@ if file_folleto and file_stock:
                 # --- BOTONES DE ACCIÓN E IMPRESIÓN ---
                 st.subheader("🛠️ 4. Acciones e Impresión")
                 
-                # 1. GENERACIÓN DEL EXCEL COMPLETO (10 columnas idénticas al formato de impresión)
-                df_excel_completo = pd.DataFrame({
-                    'CÓDIGO BARRAS (PANCHAR)': df_roturas['EAN_Limpiado'].apply(lambda x: f"'\t{x}"),
-                    'EAN': df_roturas['EAN_Limpiado'].apply(lambda x: f"'\t{x}"),
-                    'ID': df_roturas['ID_Final'],
-                    'DESCRIPCIÓN ARTÍCULO': df_roturas[col_desc],
-                    'PVP': df_roturas[col_pvp],
-                    'STOCK': df_roturas['Stock_Numerico'].astype(int),
-                    'UDS/CAJA': df_roturas['PCB_val'],
-                    'FAP': df_roturas['FAP_val'],
-                    'UBICACIÓN': df_roturas['UBI_val'],
-                    'PROMOCIÓN': df_roturas['PROMO_val']
-                })
+                # 1. GENERACIÓN DEL EXCEL COMPLETO (10 columnas en formato seguro anti-errores)
+                ean_texto = df_roturas['EAN_Limpiado'].apply(lambda x: f"'\t{x}")
+                stocks_enteros = df_roturas['Stock_Numerico'].astype(int)
                 
-                csv_data = df_excel_completo.to_csv(index=False, sep=';', encoding='utf-8-sig')
-                st.download_button(
-                    label="📥 Descargar Fichero Completo para Excel",
-                    data=csv_data,
-                    file_name="roturas_folleto_formato_final.csv",
-                    mime="text/csv
+                df_excel_completo = pd.DataFrame()
+                df_excel_completo['CÓDIGO BARRAS (PANCHAR)'] = ean_texto
+                df_excel_completo['EAN'] = ean_texto
+                df_excel_completo['ID'] = df_roturas['ID_Final']
+                df_excel_
