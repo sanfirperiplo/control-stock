@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import base64
 
 # Configuración de página adaptada para PC y iPhone
 st.set_page_config(
@@ -112,7 +113,7 @@ if file_folleto and file_stock:
             df_roturas['UBI_val'] = df_roturas[col_ubi].fillna('-').astype(str) if col_ubi else '-'
             df_roturas['PROMO_val'] = df_roturas[col_promo].fillna('-').astype(str) if col_promo else '-'
 
-            # Formato de visualización plano en la web (5 columnas originales)
+            # Formato de visualización plano en la web (5 columnas para mantener limpia la interfaz móvil)
             df_formato_pantalla = pd.DataFrame({
                 'EAN': df_roturas['EAN_Limpiado'],
                 'ID': df_roturas['ID_Final'],
@@ -135,12 +136,23 @@ if file_folleto and file_stock:
                 # --- BOTONES DE ACCIÓN E IMPRESIÓN ---
                 st.subheader("🛠️ 4. Acciones e Impresión")
                 
-                # 1. Botón para Descargar CSV básico para Excel
-                df_descarga = df_formato_pantalla.copy()
-                df_descarga['EAN'] = df_descarga['EAN'].apply(lambda x: f"'\t{x}")
-                csv_data = df_descarga.to_csv(index=False, sep=';', encoding='utf-8-sig')
+                # 1. GENERACIÓN DEL EXCEL (CSV COMPLETO CON EL MISMO FORMATO DE IMPRESIÓN)
+                df_excel_completo = pd.DataFrame({
+                    'CÓDIGO BARRAS (PANCHAR)': df_roturas['EAN_Limpiado'].apply(lambda x: f"'\t{x}"), # Formato texto plano anti-deformación de Excel
+                    'EAN': df_roturas['EAN_Limpiado'].apply(lambda x: f"'\t{x}"),
+                    'ID': df_roturas['ID_Final'],
+                    'DESCRIPCIÓN ARTÍCULO': df_roturas[col_desc],
+                    'PVP': df_roturas[col_pvp],
+                    'STOCK': df_roturas['Stock_Numerico'].astype(int),
+                    'UDS/CAJA': df_roturas['PCB_val'],
+                    'FAP': df_roturas['FAP_val'],
+                    'UBICACIÓN': df_roturas['UBI_val'],
+                    'PROMOCIÓN': df_roturas['PROMO_val']
+                })
+                
+                csv_data = df_excel_completo.to_csv(index=False, sep=';', encoding='utf-8-sig')
                 st.download_button(
-                    label="📥 Descargar Fichero para Excel",
+                    label="📥 Descargar Fichero Completo para Excel",
                     data=csv_data,
                     file_name="roturas_folleto_formato_final.csv",
                     mime="text/csv",
@@ -148,7 +160,7 @@ if file_folleto and file_stock:
                 
                 st.write("") 
 
-                # 2. GENERACIÓN DE LA TABLA HTML INCLUYENDO PCB ENTRE STOCK Y FAP
+                # 2. GENERACIÓN DE LA TABLA HTML PARA IMPRESIÓN
                 filas_html = ""
                 for idx, fila in df_roturas.iterrows():
                     filas_html += f"""
@@ -166,15 +178,11 @@ if file_folleto and file_stock:
                     </tr>
                     """
 
-                # Documento HTML estructurado de forma segura sin strings anidadas problemáticas
                 html_cabecera = """<!DOCTYPE html><html><head><meta charset="utf-8"><title>INFORME COMPLETADO DE ROTURAS</title><link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+128&display=swap" rel="stylesheet"><style>body { font-family: 'Helvetica Neue', Arial, sans-serif; padding: 10px; color: #333; } .header-container { text-align: center; margin-bottom: 25px; border-bottom: 3px solid #1E3A8A; padding-bottom: 10px; } h2 { color: #1E3A8A; margin: 0; font-size: 20px; text-transform: uppercase; } p.sub { font-size: 14px; color: #666; margin: 5px 0 0 0; } table { width: 100%; border-collapse: collapse; margin-top: 10px; } th { background-color: #1E3A8A; color: white; padding: 10px 4px; text-align: left; font-size: 11px; text-transform: uppercase; } td { padding: 8px 4px; border-bottom: 1px solid #E5E7EB; font-size: 11px; vertical-align: middle; } tr:nth-child(even) { background-color: #F9FAFB; } .barcode-cell { font-family: 'Libre Barcode 128', sans-serif; font-size: 44px; padding: 0px 4px; line-height: 1; letter-spacing: 0px; white-space: nowrap; }</style></head><body><div class="header-container"><h2>📋 INFORME COMPLETADO DE ROTURAS</h2>"""
                 html_cuerpo = f"""<p class="sub">Total alertas detectadas para revisión: <b>{len(df_roturas)}</b></p></div><table><thead><tr><th style="width: 18%;">CÓDIGO BARRAS (PANCHAR)</th><th>EAN</th><th>ID</th><th>DESCRIPCIÓN ARTÍCULO</th><th style="text-align: right;">PVP</th><th style="text-align: center;">STOCK</th><th style="text-align: center;">UDS/CAJA</th><th style="text-align: center;">FAP</th><th>UBICACIÓN</th><th>PROMOCIÓN</th></tr></thead><tbody>{filas_html}</tbody></table>"""
                 html_cierre = """<script>window.onload = function() { setTimeout(function() { window.print(); }, 500); };</script></body></html>"""
                 
                 html_impresion = html_cabecera + html_cuerpo + html_cierre
-
-                # Inyección 100% segura usando base64 para evitar que Streamlit analice caracteres extraños
-                import base64
                 html_b64 = base64.b64encode(html_impresion.encode('utf-8')).decode('utf-8')
 
                 st.components.v1.html(f"""
