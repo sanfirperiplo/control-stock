@@ -41,19 +41,18 @@ if file_folleto and file_stock:
         # Validar que ambos tienen la columna clave 'ID'
         if 'ID' in df_folleto.columns and 'ID' in df_stock.columns:
             
-            # --- SOLUCIÓN DEFINITIVA AL CRUCE DE IDs DECIMALES ---
-            # Forzamos la conversión a números flotantes limpios para que 766420.0 y 766420 sean tratados de forma idéntica matemáticamente
-            df_folleto['ID_match'] = pd.to_numeric(df_folleto['ID'], errors='coerce')
-            df_stock['ID_match'] = pd.to_numeric(df_stock['ID'], errors='coerce')
+            # --- FUNCIÓN DEFINITIVA DE LIMPIEZA DE IDs ---
+            # Convierte a texto, quita espacios y se queda SOLO con los números antes de cualquier punto decimal
+            def limpiar_codigo_id(serie):
+                return serie.astype(str).str.strip().str.split('.').str[0]
 
-            # Eliminar filas donde el ID no sea un número válido
-            df_folleto = df_folleto.dropna(subset=['ID_match'])
-            df_stock = df_stock.dropna(subset=['ID_match'])
+            df_folleto['ID_limpio'] = limpiar_codigo_id(df_folleto['ID'])
+            df_stock['ID_limpio'] = limpiar_codigo_id(df_stock['ID'])
 
             # Columnas requeridas del archivo 010
-            columnas_stock_necesarias = ['ID_match', 'ID', 'EAN', 'Descripción Artículo', 'PVP normal', 'Stock Disp']
+            columnas_stock_necesarias = ['ID_limpio', 'ID', 'EAN', 'Descripción Artículo', 'PVP normal', 'Stock Disp']
             
-            # Verificar que existan en el archivo de stock original (menos ID_match que la creamos nosotros)
+            # Verificar que existan en el archivo de stock original
             missing_cols = [col for col in ['ID', 'EAN', 'Descripción Artículo', 'PVP normal', 'Stock Disp'] if col not in df_stock.columns]
             
             if not missing_cols:
@@ -61,18 +60,18 @@ if file_folleto and file_stock:
                 # Convertimos 'Stock Disp' a número. Si está vacío (NaN), cuenta como 0 rotura.
                 df_stock['Stock Disp'] = pd.to_numeric(df_stock['Stock Disp'], errors='coerce').fillna(0)
 
-                # Cruzar los archivos usando el ID matemático limpio
-                df_cruce = pd.merge(df_folleto[['ID_match']], df_stock[columnas_stock_necesarias], on='ID_match', how='inner')
+                # Cruzar los archivos usando el ID limpio sin decimales
+                df_cruce = pd.merge(df_folleto[['ID_limpio']], df_stock[columnas_stock_necesarias], on='ID_limpio', how='inner')
                 
-                # Eliminar duplicados si un artículo viene repetido
-                df_cruce = df_cruce.drop_duplicates(subset=['ID_match'])
+                # Eliminar duplicados si un artículo viene repetido en las listas
+                df_cruce = df_cruce.drop_duplicates(subset=['ID_limpio'])
 
                 # --- FILTRO REAL DE ROTURAS (Stock Disp <= 0) ---
                 df_roturas = df_cruce[df_cruce['Stock Disp'] <= 0].copy()
 
-                # Limpieza estricta y visual del EAN y del ID original para la pantalla
+                # Limpieza estética del EAN e ID original para mostrar en pantalla bien presentados
                 df_roturas['EAN'] = pd.to_numeric(df_roturas['EAN'], errors='coerce').fillna(0).astype(int).astype(str).str.strip()
-                df_roturas['ID'] = pd.to_numeric(df_roturas['ID'], errors='coerce').fillna(0).astype(int).astype(str).str.strip()
+                df_roturas['ID'] = df_roturas['ID_limpio']
 
                 # Reordenar las columnas al formato exacto de 5 columnas solicitado
                 df_formato_solicitado = df_roturas[['EAN', 'ID', 'Descripción Artículo', 'PVP normal', 'Stock Disp']]
@@ -80,7 +79,7 @@ if file_folleto and file_stock:
                 # --- MOSTRAR RESULTADOS ---
                 st.subheader("📊 2. Resumen de Alertas")
                 c1, c2 = st.columns(2)
-                c1.metric("Artículos en Folleto", len(df_folleto['ID_match'].unique()))
+                c1.metric("Artículos en Folleto", len(df_folleto['ID_limpio'].unique()))
                 c2.metric("Roturas de Folleto 🚨", len(df_formato_solicitado), delta_color="inverse")
 
                 st.subheader("📋 3. Vista Previa del Fichero de Roturas")
@@ -107,41 +106,8 @@ if file_folleto and file_stock:
                     
                     # 2. Botón para Imprimir / Guardar en PDF
                     with col_btn2:
-                        # Creamos una estructura HTML simple para mandarla al menú de impresión nativo
                         html_table = df_formato_solicitado.to_html(index=False, classes='table')
-                        print_html = f"""
-                        <html>
-                        <head>
-                        <meta charset="utf-8">
-                        <style>
-                            body {{ font-family: Arial, sans-serif; margin: 20px; color: #333; }}
-                            h2 {{ text-align: center; color: #1E3A8A; }}
-                            table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
-                            th {{ background-color: #1E3A8A; color: white; padding: 10px; text-align: left; font-size: 14px; }}
-                            td {{ padding: 10px; border-bottom: 1px solid #ddd; font-size: 13px; }}
-                            tr:nth-child(even) {{ background-color: #f9f9f9; }}
-                        </style>
-                        </head>
-                        <body>
-                            <h2>📋 INFORME DE ROTURAS DE STOCK - FOLLETO ACTIVADO</h2>
-                            <p><strong>Total Roturas Detectadas:</strong> {len(df_formato_solicitado)} artículos</p>
-                            {html_table}
-                            <script>
-                                function abrirImpresion() {{
-                                    var vent = window.open('', '_blank');
-                                    vent.document.write({repr(html_table)});
-                                    vent.document.write('<style>body{{font-family:Arial;margin:30px}}h2{{color:#1E3A8A;text-align:center}}table{{width:100%;border-collapse:collapse}}th{{background:#1E3A8A;color:white;padding:10px;text-align:left}}td{{padding:10px;border-bottom:1px solid #ddd}}tr:nth-child(even){{background:#f9f9f9}}</style>');
-                                    vent.document.write('<h2>📋 INFORME DE ROTURAS DE STOCK</h2>');
-                                    vent.document.write(document.getElementsByTagName('table')[0].outerHTML);
-                                    vent.document.close();
-                                    vent.print();
-                                }}
-                            </script>
-                        </body>
-                        </html>
-                        """
                         
-                        # Generación del script embebido seguro de Streamlit para llamar a la ventana de impresión
                         if st.button("🖨️ Imprimir / Informe PDF"):
                             st.components.v1.html(f"""
                                 <script>
