@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import base64
 
-# Configuración de página adaptada para PC y iPhone
+# 1. CONFIGURACIÓN E INTERFAZ VISUAL (Adaptada para PC y Móvil)
 st.set_page_config(
     page_title="INFORME COMPLETADO DE ROTURAS",
     page_icon="📊",
@@ -10,7 +10,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Estilos limpios y optimizados para el móvil
 st.markdown("""
     <style>
     .main .block-container { padding-top: 1.5rem; padding-bottom: 2rem; }
@@ -20,7 +19,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Título principal modificado según tu solicitud
 st.title("📊 FICHERO ROTURAS DE FOLLETO")
 st.write("Sube los archivos para extraer el listado formateado listo para revisión e impresión con códigos escaneables.")
 
@@ -28,13 +26,34 @@ st.subheader("📁 1. Cargar Archivos")
 file_folleto = st.file_uploader("Sube el Fichero del Folleto (SMS CON FOTO...)", type=["xlsx", "csv"], key="folleto")
 file_stock = st.file_uploader("Sube el Fichero de Stock (010...)", type=["xlsx", "csv"], key="stock")
 
-if file_folleto and file_stock:
-    try:
-        # Leer ficheros (soporta Excel y CSV)
-        df_folleto = pd.read_excel(file_folleto) if file_folleto.name.endswith('.xlsx') else pd.read_csv(file_folleto)
-        df_stock = pd.read_excel(file_stock) if file_stock.name.endswith('.xlsx') else pd.read_csv(file_stock)
+# Inicialización segura de variables globales para evitar errores de referencia
+ejecutar_procesado = False
+df_folleto = None
+df_stock = None
 
-        # --- NORMALIZADOR DE COLUMNAS INTELIGENTE ---
+# Verificación inicial plana de archivos
+if file_folleto and file_stock:
+    ejecutar_procesado = True
+
+# Si falta algún archivo, mostramos el aviso informativo de forma limpia
+if not ejecutar_procesado:
+    st.info("💡 Sube ambos ficheros para generar automáticamente el documento con la estructura solicitada.")
+
+# --- BLOQUE DE PROCESADO PRINCIPAL BLINDADO ---
+if ejecutar_procesado:
+    try:
+        # Lectura segura de formatos Excel o CSV
+        if file_folleto.name.endswith('.xlsx'):
+            df_folleto = pd.read_excel(file_folleto)
+        else:
+            df_folleto = pd.read_csv(file_folleto)
+            
+        if file_stock.name.endswith('.xlsx'):
+            df_stock = pd.read_excel(file_stock)
+        else:
+            df_stock = pd.read_csv(file_stock)
+
+        # Normalizador estricto de columnas para evitar fallos de mayúsculas/acentos
         mapeo_folleto = {}
         for col in df_folleto.columns:
             col_l = str(col).strip().lower().replace('á', 'a').replace('é', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u').replace('/', ' ')
@@ -45,7 +64,7 @@ if file_folleto and file_stock:
             col_l = str(col).strip().lower().replace('á', 'a').replace('é', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u').replace('/', ' ')
             mapeo_stock[col_l] = col
 
-        # Identificar las columnas obligatorias principales
+        # Mapeo de columnas requeridas
         col_id_folleto = mapeo_folleto.get('id')
         col_id_stock = mapeo_stock.get('id')
         col_ean = mapeo_stock.get('ean')
@@ -53,28 +72,32 @@ if file_folleto and file_stock:
         col_pvp = mapeo_stock.get('pvp normal')
         col_stock = mapeo_stock.get('stock disp')
         
-        # Columnas opcionales
         col_fap = mapeo_stock.get('fap')
         col_ubi = mapeo_stock.get('ubicacion')
         col_promo = mapeo_folleto.get('descriptivo promocion')
         
-        # Búsqueda flexible para la columna PCB
         col_pcb = None
         for key, val in mapeo_stock.items():
             if 'pcb' in key or 'unidades caja' in key:
                 col_pcb = val
                 break
 
-        st.success("¡Ficheros cargados con éxito!")
-
-        # Validar que existan las columnas obligatorias
+        # Validación estructural estricta de columnas obligatorias
+        columnas_validas = False
         if col_id_folleto and col_id_stock and col_ean and col_desc and col_pvp and col_stock:
-            
-            # --- LIMPIEZA DE IDs DE TEXTO RADICAL ---
+            columnas_validas = True
+
+        if not columnas_validas:
+            st.error("❌ Error: No se encontraron las columnas obligatorias necesarias (ID, EAN, Descripción, PVP normal o Stock Disp) en los ficheros.")
+
+        if columnas_validas:
+            st.success("¡Ficheros cargados con éxito!")
+
+            # Limpieza homogénea de IDs de texto
             df_folleto['ID_limpio'] = df_folleto[col_id_folleto].astype(str).str.strip().str.split('.').str[0]
             df_stock['ID_limpio'] = df_stock[col_id_stock].astype(str).str.strip().str.split('.').str[0]
 
-            # Preparar dataframe base de stock a extraer
+            # Recompilación de datos requeridos de stock
             columnas_a_extraer = ['ID_limpio', col_id_stock, col_ean, col_desc, col_pvp, col_stock]
             if col_pcb: columnas_a_extraer.append(col_pcb)
             if col_fap: columnas_a_extraer.append(col_fap)
@@ -82,34 +105,29 @@ if file_folleto and file_stock:
 
             df_stock_limpio = df_stock[columnas_a_extraer].copy()
 
-            # Cruzar folleto con stock (010)
+            # Cruce inteligente (Inner Join) entre Folleto y Stock
             df_cruce = pd.merge(df_folleto[['ID_limpio']], df_stock_limpio, on='ID_limpio', how='inner')
             
-            # Cruzar para rescatar la columna promocional si existe
             if col_promo:
                 df_folleto_promo = df_folleto[['ID_limpio', col_promo]].drop_duplicates(subset=['ID_limpio'])
                 df_cruce = pd.merge(df_cruce, df_folleto_promo, on='ID_limpio', how='left')
 
-            # Eliminar duplicados si un artículo está repetido
             df_cruce = df_cruce.drop_duplicates(subset=['ID_limpio'])
 
-            # --- CONVERSIÓN DE STOCK ---
+            # Filtrado matemático: Stock Disp <= 2
             df_cruce['Stock_Numerico'] = pd.to_numeric(df_cruce[col_stock], errors='coerce').fillna(0)
-
-            # --- FILTRO DE CRITERIO: Stock Disp <= 2 ---
             df_roturas = df_cruce[df_cruce['Stock_Numerico'] <= 2].copy()
 
-            # Limpieza estética de códigos EAN e ID
+            # Homogeneización de campos finales
             df_roturas['EAN_Limpiado'] = pd.to_numeric(df_roturas[col_ean], errors='coerce').fillna(0).astype(int).astype(str).str.strip()
             df_roturas['ID_Final'] = df_roturas['ID_limpio'].astype(str)
 
-            # Asignación segura de campos extras por si vienen vacíos
             df_roturas['PCB_val'] = df_roturas[col_pcb].fillna('-').astype(str).str.split('.').str[0] if col_pcb else '-'
             df_roturas['FAP_val'] = df_roturas[col_fap].fillna('-').astype(str) if col_fap else '-'
             df_roturas['UBI_val'] = df_roturas[col_ubi].fillna('-').astype(str) if col_ubi else '-'
             df_roturas['PROMO_val'] = df_roturas[col_promo].fillna('-').astype(str) if col_promo else '-'
 
-            # Formato de visualización plano en la web (5 columnas para mantener limpia la interfaz móvil)
+            # DataFrame simplificado para el visor web en iPhone/PC
             df_formato_pantalla = pd.DataFrame({
                 'EAN': df_roturas['EAN_Limpiado'],
                 'ID': df_roturas['ID_Final'],
@@ -118,7 +136,7 @@ if file_folleto and file_stock:
                 'Stock Disp': df_roturas['Stock_Numerico']
             })
 
-            # --- MOSTRAR RESULTADOS ---
+            # --- MOSTRAR RESULTADOS REVISADOS ---
             st.subheader("📊 2. Resumen de Alertas")
             c1, c2 = st.columns(2)
             c1.metric("Artículos en Folleto", len(df_folleto['ID_limpio'].unique()))
@@ -126,13 +144,17 @@ if file_folleto and file_stock:
 
             st.subheader("📋 3. Vista Previa del Fichero de Roturas")
             
-            if len(df_formato_pantalla) > 0:
+            # Verificación del volumen de alertas mediante variables de conteo plano
+            tiene_alertas = len(df_formato_pantalla) > 0
+
+            if not tiene_alertas:
+                st.success("✅ ¡Todo en orden! Ningún artículo del folleto tiene un Stock Disponible crítico.")
+
+            if tiene_alertas:
                 st.dataframe(df_formato_pantalla, use_container_width=True, hide_index=True)
-                
-                # --- BOTONES DE ACCIÓN E IMPRESIÓN ---
                 st.subheader("🛠️ 4. Acciones e Impresión")
                 
-                # 1. GENERACIÓN DEL EXCEL COMPLETO (Estructura lineal fija a prueba de fallos)
+                # Generación plana del archivo Excel/CSV (Formato estricto solicitado)
                 df_excel_completo = pd.DataFrame()
                 df_excel_completo['CÓDIGO BARRAS (PANCHAR)'] = df_roturas['EAN_Limpiado'].apply(lambda x: f"'\t{x}")
                 df_excel_completo['EAN'] = df_roturas['EAN_Limpiado'].apply(lambda x: f"'\t{x}")
@@ -156,7 +178,7 @@ if file_folleto and file_stock:
                 
                 st.write("") 
 
-                # 2. GENERACIÓN SEGURA DE LA TABLA HTML PARA IMPRESIÓN (Construcción por partes sin f-strings peligrosos)
+                # Construcción segura del HTML de impresión por piezas individuales continuas
                 html_parts = []
                 html_parts.append('<!DOCTYPE html><html><head><meta charset="utf-8">')
                 html_parts.append('<title>INFORME COMPLETADO DE ROTURAS</title>')
@@ -219,4 +241,5 @@ if file_folleto and file_stock:
                     </html>
                 """, height=65)
 
-            else:
+    except Exception as e:
+        st.error(f"Ocurrió un error en el procesado técnico: {e}")
