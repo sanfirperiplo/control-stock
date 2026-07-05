@@ -246,7 +246,7 @@ if ejecutar_procesado:
                 csv_data = df_excel_completo.to_csv(index=False, sep=';', encoding='utf-8-sig')
                 
                 st.download_button(
-                    label="📥 DESCARGAR DATASET COMPLETO PARA EXCEL (.CSV)",
+                    label="DESCARGA EL FICHERO ROTURAS DE FOLLETO",
                     data=csv_data,
                     file_name="roturas_folleto_tienda.csv",
                     mime="text/csv"
