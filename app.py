@@ -41,10 +41,13 @@ if file_folleto and file_stock:
         # Validar que ambos tienen la columna clave 'ID'
         if 'ID' in df_folleto.columns and 'ID' in df_stock.columns:
             
-            # --- TRATAMIENTO MATEMÁTICO AVANZADO PARA CORREGIR DECIMALES DE EXCEL (.1, .0) ---
-            # Pasamos a número flotante y extraemos la parte entera para que 24.1 o 24.0 sea 24 exactamente
-            df_folleto['ID_limpio'] = pd.to_numeric(df_folleto['ID'], errors='coerce').fillna(-1).apply(lambda x: int(float(x)) if float(x) >= 0 else -1)
-            df_stock['ID_limpio'] = pd.to_numeric(df_stock['ID'], errors='coerce').fillna(-2).apply(lambda x: int(float(x)) if float(x) >= 0 else -2)
+            # --- LIMPIEZA DE IDs DE TEXTO RADICAL (Para emparejar 24.1, 766420.0 y 766420) ---
+            # Pasamos a string, quitamos espacios y eliminamos cualquier extensión decimal (.0, .1, etc.)
+            def limpiar_id_estricto(serie):
+                return serie.astype(str).str.strip().str.split('.').str[0]
+
+            df_folleto['ID_limpio'] = limpiar_id_estricto(df_folleto['ID'])
+            df_stock['ID_limpio'] = limpiar_id_estricto(df_stock['ID'])
 
             # Columnas requeridas del archivo 010 original
             columnas_stock_necesarias = ['ID_limpio', 'ID', 'EAN', 'Descripción Artículo', 'PVP normal', 'Stock Disp']
@@ -54,30 +57,30 @@ if file_folleto and file_stock:
             
             if not missing_cols:
                 # --- TRATAMIENTO DE STOCK ---
-                # Convertimos 'Stock Disp' a número. Si está vacío (NaN), cuenta como 0 rotura.
+                # Convertimos 'Stock Disp' a número. Si está vacío (NaN), cuenta como 0.
                 df_stock['Stock Disp'] = pd.to_numeric(df_stock['Stock Disp'], errors='coerce').fillna(0)
 
-                # Cruzar los archivos usando el ID entero unificado matemáticamente
+                # Cruzar los archivos usando el ID limpio de texto sin decimales
                 df_cruce = pd.merge(df_folleto[['ID_limpio']], df_stock[columnas_stock_necesarias], on='ID_limpio', how='inner')
                 
-                # Eliminar duplicados si un artículo viene repetido
+                # Eliminar duplicados si un artículo viene repetido en las listas
                 df_cruce = df_cruce.drop_duplicates(subset=['ID_limpio'])
 
-                # --- FILTRO REAL DE ROTURAS (Stock Disp <= 0) ---
-                df_roturas = df_cruce[df_cruce['Stock Disp'] <= 0].copy()
+                # --- NUEVO CRITERIO SOLICITADO DE ROTURAS: Stock Disp <= 2 ---
+                df_roturas = df_cruce[df_cruce['Stock Disp'] <= 2].copy()
 
                 # Limpieza estricta de códigos largos (EAN) para pasarlos a texto plano sin decimales
                 df_roturas['EAN'] = pd.to_numeric(df_roturas['EAN'], errors='coerce').fillna(0).astype(int).astype(str).str.strip()
                 df_roturas['ID'] = df_roturas['ID_limpio'].astype(str)
 
-                # Reordenar las columnas al formato exacto de 5 columnas solicitado
+                # Reordenar las columnas al formato exacto de 5 columnas solicitado originalmente
                 df_formato_solicitado = df_roturas[['EAN', 'ID', 'Descripción Artículo', 'PVP normal', 'Stock Disp']]
 
                 # --- MOSTRAR RESULTADOS ---
                 st.subheader("📊 2. Resumen de Alertas")
                 c1, c2 = st.columns(2)
-                c1.metric("Artículos en Folleto", len(df_folleto['ID_limpio'].unique()) - (1 if -1 in df_folleto['ID_limpio'].values else 0))
-                c2.metric("Roturas de Folleto 🚨", len(df_formato_solicitado), delta_color="inverse")
+                c1.metric("Artículos en Folleto", len(df_folleto['ID_limpio'].unique()))
+                c2.metric("Roturas de Folleto (Stock <= 2) 🚨", len(df_formato_solicitado), delta_color="inverse")
 
                 st.subheader("📋 3. Vista Previa del Fichero de Roturas")
                 
@@ -101,7 +104,7 @@ if file_folleto and file_stock:
                     
                     st.write("") # Espacio visual
 
-                    # 2. SISTEMA DE IMPRESIÓN PREMIUM CON CÓDIGO DE BARRAS A LA IZQUIERDA
+                    # 2. SISTEMA DE IMPRESIÓN CON CÓDIGO DE BARRAS A LA IZQUIERDA DEL EAN EN TEXTO
                     filas_html = ""
                     for _, fila in df_formato_solicitado.iterrows():
                         filas_html += f"""
@@ -132,45 +135,27 @@ if file_folleto and file_stock:
                             th {{ background-color: #1E3A8A; color: white; padding: 10px 8px; text-align: left; font-size: 12px; text-transform: uppercase; }}
                             td {{ padding: 8px; border-bottom: 1px solid #E5E7EB; font-size: 12px; vertical-align: middle; }}
                             tr:nth-child(even) {{ background-color: #F9FAFB; }}
+                            /* Estilo para que la fuente dibuje las barras escaneables de forma limpia */
                             .barcode-cell {{ 
                                 font-family: 'Libre Barcode 128', sans-serif; 
-                                font-size: 44px; 
+                                font-size: 46px; 
                                 padding: 0px 8px; 
                                 line-height: 1; 
                                 letter-spacing: 0px;
                                 white-space: nowrap;
                             }}
-                            .print-btn {{
-                                display: block;
-                                width: 100%;
-                                background-color: #1E3A8A;
-                                color: white;
-                                text-align: center;
-                                padding: 14px;
-                                font-size: 16px;
-                                font-weight: bold;
-                                border: none;
-                                border-radius: 10px;
-                                cursor: pointer;
-                                text-decoration: none;
-                                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                                font-family: Arial, sans-serif;
-                            }}
-                            .print-btn:hover {{ background-color: #1D4ED8; }}
                         </style>
                     </head>
                     <body>
-                        <button class="print-btn" onclick="window.print();">CONFIRMAR IMPRESIÓN / GUARDAR EN PDF</button>
-                        
-                        <div class="header-container" style="margin-top: 25px;">
-                            <h2>📋 INFORME DE ROTURAS DE STOCK ESCANEABLE</h2>
-                            <p class="sub">Total artículos agotados en folleto: <b>{len(df_formato_solicitado)}</b></p>
+                        <div class="header-container">
+                            <h2>📋 INFORME DE ROTURAS DE STOCK ESCANEABLE (STOCK <= 2)</h2>
+                            <p class="sub">Total artículos en alerta: <b>{len(df_formato_solicitado)}</b></p>
                         </div>
                         
                         <table>
                             <thead>
                                 <tr>
-                                    <th style="width: 25%;">CÓDIGO BARRAS (ESCANEABLE)</th>
+                                    <th style="width: 25%;">CÓDIGO DE BARRAS (PANCHABLE)</th>
                                     <th>EAN</th>
                                     <th>ID</th>
                                     <th>DESCRIPCIÓN ARTÍCULO</th>
@@ -182,17 +167,21 @@ if file_folleto and file_stock:
                                 {filas_html}
                             </tbody>
                         </table>
+                        <script>
+                            window.onload = function() {{
+                                setTimeout(function() {{ window.print(); }}, 500);
+                            }};
+                        </script>
                     </body>
                     </html>
                     """
 
-                    # Codificar el HTML de forma segura para incrustar un botón directo que no bloquee ningún móvil
-                    import datetime
+                    # Insertamos el botón interactivo blindado compatible con Safari en el iPhone
                     st.components.v1.html(f"""
                         <html>
                         <body>
                             <button onclick="abrirInforme()" style="display: block; width: 100%; background-color: #1E3A8A; color: white; text-align: center; padding: 14px; font-size: 16px; font-weight: bold; border-radius: 10px; font-family: Arial, sans-serif; border: none; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                               🖨️ IMPRIMIR / VER INFORME CON CÓDIGOS DE BARRAS
+                               🖨️ IMPRIMIR / VER INFORME CON CÓDIGOS DE BARRAS A LA IZQUIERDA
                             </button>
                             <script>
                                 function abrirInforme() {{
@@ -207,7 +196,7 @@ if file_folleto and file_stock:
                     """, height=65)
 
                 else:
-                    st.success("✅ ¡Todo en orden! Todos los artículos del folleto tienen Stock Disponible en tienda.")
+                    st.success("✅ ¡Todo en orden! Todos los artículos del folleto tienen un Stock Disponible mayor a 2.")
             else:
                 st.error(f"❌ El archivo de stock (010) no contiene todas las columnas requeridas. Faltan: {missing_cols}")
         else:
