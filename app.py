@@ -9,7 +9,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Estilos limpios para el móvil
+# Estilos limpios y optimizados para el móvil
 st.markdown("""
     <style>
     .main .block-container { padding-top: 1.5rem; padding-bottom: 2rem; }
@@ -41,20 +41,12 @@ if file_folleto and file_stock:
         # Validar que ambos tienen la columna clave 'ID'
         if 'ID' in df_folleto.columns and 'ID' in df_stock.columns:
             
-            # --- TRATAMIENTO MATEMÁTICO BLINDADO PARA LOS IDs ---
-            # Pasamos a numérico ignorando errores y luego a enteros/texto limpios para que 24.1 o 24 coincidan exactamente
-            def normalizar_id(df, columna):
-                df[columna] = pd.to_numeric(df[columna], errors='coerce')
-                # Quitamos filas sin ID válido para evitar fallos
-                df = df.dropna(subset=[columna])
-                # Convertimos a string formateando el número para eliminar cualquier rastro de .0 o flotantes
-                df[columna] = df[columna].apply(lambda x: f"{int(x)}" if x.is_integer() else f"{x}").str.strip()
-                return df
+            # --- NORMALIZACIÓN BLINDADA DE IDs ---
+            # Pasamos a texto limpio convirtiendo primero a número para quitar cualquier espacio, letras o problemas
+            df_folleto['ID'] = pd.to_numeric(df_folleto['ID'], errors='coerce').fillna(-1).astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+            df_stock['ID'] = pd.to_numeric(df_stock['ID'], errors='coerce').fillna(-2).astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
 
-            df_folleto = normalizar_id(df_folleto, 'ID')
-            df_stock = normalizar_id(df_stock, 'ID')
-
-            # Columnas requeridas del archivo de stock (010) según tu formato solicitado
+            # Columnas requeridas que DEBEN existir en el archivo de stock (010)
             columnas_stock_necesarias = ['ID', 'EAN', 'Descripción Artículo', 'PVP normal', 'Stock Disp']
             
             # Verificar que existan en el archivo de stock
@@ -65,16 +57,17 @@ if file_folleto and file_stock:
                 df_stock['Stock Disp'] = pd.to_numeric(df_stock['Stock Disp'], errors='coerce').fillna(0)
                 df_stock_roturas = df_stock[df_stock['Stock Disp'] <= 0].copy()
 
-                # Limpieza estricta del EAN (Código de barras) para que no salga con notación científica
+                # Limpieza estricta del EAN (Código de barras) para evitar exponenciales y decimales
                 df_stock_roturas['EAN'] = pd.to_numeric(df_stock_roturas['EAN'], errors='coerce').fillna(0).astype(int).astype(str).str.strip()
 
-                # Cruzar con el folleto para extraer SOLO los artículos que están en promoción activa
+                # Cruzar con el folleto para extraer ÚNICAMENTE los artículos que están en el folleto activo
+                # Hacemos el merge trayendo solo las columnas deseadas del stock
                 df_final_roturas = pd.merge(df_folleto[['ID']], df_stock_roturas[columnas_stock_necesarias], on='ID', how='inner')
 
                 # Eliminar posibles filas duplicadas si un artículo aparece repetido en los listados
                 df_final_roturas = df_final_roturas.drop_duplicates(subset=['ID'])
 
-                # Reordenar las columnas exactamente al formato solicitado de 5 columnas
+                # Reordenar las columnas exactamente al formato de 5 columnas solicitado
                 # Formato: EAN | ID | Descripción Artículo | PVP normal | Stock Disp
                 df_formato_solicitado = df_final_roturas[['EAN', 'ID', 'Descripción Artículo', 'PVP normal', 'Stock Disp']]
 
@@ -91,10 +84,10 @@ if file_folleto and file_stock:
                     
                     # Preparación especial para la descarga
                     df_descarga = df_formato_solicitado.copy()
-                    # TRUCO EXCEL: Añadir una pestaña invisible de texto al EAN para obligar a Excel a leerlo como texto y no cortar los ceros iniciales
+                    # TRUCO EXCEL: Poner comillas al EAN para forzar a Excel en Windows a leerlo como texto y no acortar los números
                     df_descarga['EAN'] = df_descarga['EAN'].apply(lambda x: f'"{x}"' if len(x) > 0 else x)
                     
-                    # Guardar en CSV estructurado con punto y coma (;) para que Excel en Windows/Mac lo abra perfecto directamente
+                    # Guardar en CSV estructurado con punto y coma (;) para que Excel lo abra con las columnas ya perfectas
                     csv_data = df_descarga.to_csv(index=False, sep=';', encoding='utf-8-sig')
                     
                     st.download_button(
