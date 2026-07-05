@@ -32,21 +32,20 @@ if file_folleto and file_stock:
         df_folleto = pd.read_excel(file_folleto) if file_folleto.name.endswith('.xlsx') else pd.read_csv(file_folleto)
         df_stock = pd.read_excel(file_stock) if file_stock.name.endswith('.xlsx') else pd.read_csv(file_stock)
 
-        # --- NORMALIZADOR DE COLUMNAS INTELIGENTE (Ignora mayúsculas, minúsculas y acentos) ---
+        # --- NORMALIZADOR DE COLUMNAS INTELIGENTE ---
         def normalizar_columnas(df):
-            # Diccionario para mapear nombres normalizados a los nombres reales encontrados
             mapeo = {}
             for col in df.columns:
                 col_limpia = str(col).strip().lower()
-                # Quitar acentos básicos para evitar fallos comunes de codificación
                 col_limpia = col_limpia.replace('á', 'a').replace('é', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u')
+                col_limpia = col_limpia.replace('/', ' ') # Eliminar barra diagonal para facilitar emparejamiento de PCB
                 mapeo[col_limpia] = col
             return mapeo
 
         map_folleto = normalizar_columnas(df_folleto)
         map_stock = normalizar_columnas(df_stock)
 
-        # Identificar las columnas clave usando los nombres normalizados planos
+        # Identificar las columnas obligatorias principales
         col_id_folleto = map_folleto.get('id')
         col_id_stock = map_stock.get('id')
         col_ean = map_stock.get('ean')
@@ -54,58 +53,66 @@ if file_folleto and file_stock:
         col_pvp = map_stock.get('pvp normal')
         col_stock = map_stock.get('stock disp')
         
-        # Columnas opcionales que pediste añadir a la derecha
+        # Columnas opcionales
         col_fap = map_stock.get('fap')
         col_ubi = map_stock.get('ubicacion')
         col_promo = map_folleto.get('descriptivo promocion')
+        
+        # Búsqueda flexible para la columna PCB
+        col_pcb = None
+        for key in map_stock.keys():
+            if 'pcb' in key or 'unidades caja' in key:
+                col_pcb = map_stock[key]
+                break
 
         st.success("¡Ficheros cargados con éxito!")
 
-        # Validar que existan las columnas obligatorias para hacer el cruce de datos
+        # Validar que existan las columnas obligatorias
         if col_id_folleto and col_id_stock and col_ean and col_desc and col_pvp and col_stock:
             
-            # --- LIMPIEZA DE IDs DE TEXTO RADICAL (Para emparejar 24.1, 766420.0 y 766420) ---
+            # --- LIMPIEZA DE IDs DE TEXTO RADICAL ---
             def limpiar_id_estricto(serie):
                 return serie.astype(str).str.strip().str.split('.').str[0]
 
             df_folleto['ID_limpio'] = limpiar_id_estricto(df_folleto[col_id_folleto])
             df_stock['ID_limpio'] = limpiar_id_estricto(df_stock[col_id_stock])
 
-            # Creamos un dataframe limpio de stock conservando los nombres de columnas reales mapeados
+            # Preparar dataframe base de stock a extraer
             columnas_a_extraer = ['ID_limpio', col_id_stock, col_ean, col_desc, col_pvp, col_stock]
+            if col_pcb: columnas_a_extraer.append(col_pcb)
             if col_fap: columnas_a_extraer.append(col_fap)
             if col_ubi: columnas_a_extraer.append(col_ubi)
 
-            # Quitar duplicados previos en la extracción
             df_stock_limpio = df_stock[columnas_a_extraer].copy()
 
-            # Cruzar primero el folleto con los datos extraídos del stock (010)
+            # Cruzar folleto con stock (010)
             df_cruce = pd.merge(df_folleto[['ID_limpio']], df_stock_limpio, on='ID_limpio', how='inner')
             
-            # Unir ahora con el folleto para rescatar la columna promocional si existía
+            # Cruzar para rescatar la columna promocional si existe
             if col_promo:
                 df_folleto_promo = df_folleto[['ID_limpio', col_promo]].drop_duplicates(subset=['ID_limpio'])
                 df_cruce = pd.merge(df_cruce, df_folleto_promo, on='ID_limpio', how='left')
 
-            # Eliminar registros duplicados finales si un artículo se repite
+            # Eliminar duplicados si un artículo está repetido
             df_cruce = df_cruce.drop_duplicates(subset=['ID_limpio'])
 
-            # --- TRATAMIENTO Y CONVERSIÓN DE STOCK ---
+            # --- CONVERSIÓN DE STOCK ---
             df_cruce['Stock_Numerico'] = pd.to_numeric(df_cruce[col_stock], errors='coerce').fillna(0)
 
             # --- FILTRO CRÍTICO SOLICITADO: Stock Disponible <= 2 ---
             df_roturas = df_cruce[df_cruce['Stock_Numerico'] <= 2].copy()
 
-            # Limpieza estética de códigos EAN e ID para que se visualicen correctamente sin decimales
+            # Limpieza estética de códigos EAN e ID
             df_roturas['EAN_Limpiado'] = pd.to_numeric(df_roturas[col_ean], errors='coerce').fillna(0).astype(int).astype(str).str.strip()
             df_roturas['ID_Final'] = df_roturas['ID_limpio'].astype(str)
 
-            # Asignación segura de las nuevas 3 celdas por si venían vacías (NaN) o no existían en el archivo original
+            # Asignación segura de campos extras por si vienen vacíos
+            df_roturas['PCB_val'] = df_roturas[col_pcb].fillna('-').astype(str).str.split('.').str[0] if col_pcb else '-'
             df_roturas['FAP_val'] = df_roturas[col_fap].fillna('-').astype(str) if col_fap else '-'
             df_roturas['UBI_val'] = df_roturas[col_ubi].fillna('-').astype(str) if col_ubi else '-'
             df_roturas['PROMO_val'] = df_roturas[col_promo].fillna('-').astype(str) if col_promo else '-'
 
-            # Formato de visualización plano para la tabla nativa web en pantalla (5 columnas originales)
+            # Formato de visualización plano en la web (5 columnas originales)
             df_formato_pantalla = pd.DataFrame({
                 'EAN': df_roturas['EAN_Limpiado'],
                 'ID': df_roturas['ID_Final'],
@@ -141,7 +148,7 @@ if file_folleto and file_stock:
                 
                 st.write("") 
 
-                # 2. GENERACIÓN MAQUETADA DE LA TABLA HTML DE IMPRESIÓN CON LAS 3 CELDAS A LA DERECHA
+                # 2. GENERACIÓN DE LA TABLA HTML INCLUYENDO PCB ENTRE STOCK Y FAP
                 filas_html = ""
                 for idx, fila in df_roturas.iterrows():
                     filas_html += f"""
@@ -152,13 +159,14 @@ if file_folleto and file_stock:
                         <td>{fila[col_desc]}</td>
                         <td style="text-align: right;">{fila[col_pvp]}</td>
                         <td style="text-align: center; font-weight: bold; color: #DC2626;">{int(fila['Stock_Numerico'])}</td>
+                        <td style="text-align: center; font-weight: bold; color: #1E3A8A;">{fila['PCB_val']}</td>
                         <td style="text-align: center;">{fila['FAP_val']}</td>
                         <td>{fila['UBI_val']}</td>
                         <td style="font-size: 11px; color: #1E3A8A;">{fila['PROMO_val']}</td>
                     </tr>
                     """
 
-                # Documento HTML final para mandar a la impresora o guardar como PDF
+                # Documento HTML final con ancho y estilos ajustados
                 html_impresion = f"""
                 <!DOCTYPE html>
                 <html>
@@ -172,8 +180,8 @@ if file_folleto and file_stock:
                         h2 {{ color: #1E3A8A; margin: 0; font-size: 20px; text-transform: uppercase; }}
                         p.sub {{ font-size: 14px; color: #666; margin: 5px 0 0 0; }}
                         table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
-                        th {{ background-color: #1E3A8A; color: white; padding: 10px 6px; text-align: left; font-size: 11px; text-transform: uppercase; }}
-                        td {{ padding: 8px 6px; border-bottom: 1px solid #E5E7EB; font-size: 11px; vertical-align: middle; }}
+                        th {{ background-color: #1E3A8A; color: white; padding: 10px 4px; text-align: left; font-size: 11px; text-transform: uppercase; }}
+                        td {{ padding: 8px 4px; border-bottom: 1px solid #E5E7EB; font-size: 11px; vertical-align: middle; }}
                         tr:nth-child(even) {{ background-color: #F9FAFB; }}
                         .barcode-cell {{ 
                             font-family: 'Libre Barcode 128', sans-serif; 
@@ -200,6 +208,7 @@ if file_folleto and file_stock:
                                 <th>DESCRIPCIÓN ARTÍCULO</th>
                                 <th style="text-align: right;">PVP</th>
                                 <th style="text-align: center;">STOCK</th>
+                                <th style="text-align: center;">UDS/CAJA</th>
                                 <th style="text-align: center;">FAP</th>
                                 <th>UBICACIÓN</th>
                                 <th>PROMOCIÓN</th>
@@ -218,7 +227,7 @@ if file_folleto and file_stock:
                 </html>
                 """
 
-                # Botón de impresión seguro con script anti-bloqueos integrado
+                # Botón de impresión seguro
                 st.components.v1.html(f"""
                     <html>
                     <body>
@@ -240,9 +249,8 @@ if file_folleto and file_stock:
             else:
                 st.success("✅ ¡Todo en orden! Ningún artículo del folleto tiene un Stock Disponible menor o igual a 2.")
         else:
-            st.error("❌ Error: No se encontraron las columnas necesarias (ID, EAN, Descripción, PVP normal o Stock Disp) en los ficheros.")
+            st.error("❌ Error: No se encontraron las columnas obligatorias necesarias (ID, EAN, Descripción, PVP normal o Stock Disp) en los ficheros.")
             
     except Exception as e:
         st.error(f"Ocurrió un error en el procesado técnico: {e}")
 else:
-    st.info("💡 Sube ambos ficheros para generar automáticamente el documento con la estructura solicitada.")
