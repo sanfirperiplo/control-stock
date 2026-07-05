@@ -97,4 +97,5 @@ if file_folleto and file_stock:
     except Exception as e:
         st.error(f"Ocurrió un error en el procesado: {e}")
 else:
-    st.info("💡 Sube ambos ficheros para generar automáticamente el documento con la estructura de 5 columnas solicitada.")a columna.")
+    st.info("💡 Sube ambos ficheros para generar automáticamente el documento con la estructura de 5 columnas solicitada.")
+    
