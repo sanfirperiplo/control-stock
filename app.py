@@ -42,7 +42,6 @@ if file_folleto and file_stock:
         if 'ID' in df_folleto.columns and 'ID' in df_stock.columns:
             
             # --- NORMALIZACIÓN BLINDADA DE IDs ---
-            # Pasamos a texto limpio convirtiendo primero a número para quitar cualquier espacio, letras o problemas
             df_folleto['ID'] = pd.to_numeric(df_folleto['ID'], errors='coerce').fillna(-1).astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
             df_stock['ID'] = pd.to_numeric(df_stock['ID'], errors='coerce').fillna(-2).astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
 
@@ -61,7 +60,6 @@ if file_folleto and file_stock:
                 df_stock_roturas['EAN'] = pd.to_numeric(df_stock_roturas['EAN'], errors='coerce').fillna(0).astype(int).astype(str).str.strip()
 
                 # Cruzar con el folleto para extraer ÚNICAMENTE los artículos que están en el folleto activo
-                # Hacemos el merge trayendo solo las columnas deseadas del stock
                 df_final_roturas = pd.merge(df_folleto[['ID']], df_stock_roturas[columnas_stock_necesarias], on='ID', how='inner')
 
                 # Eliminar posibles filas duplicadas si un artículo aparece repetido en los listados
@@ -79,15 +77,14 @@ if file_folleto and file_stock:
 
                 st.subheader("📋 3. Vista Previa del Fichero de Roturas")
                 if not df_formato_solicitado.empty:
-                    # Mostrar la tabla en la app (PC/Móvil)
+                    # Mostrar la tabla en la app limpia SIN comillas
                     st.dataframe(df_formato_solicitado, use_container_width=True, hide_index=True)
                     
-                    # Preparación especial para la descarga
+                    # Preparación especial para la descarga (convertimos el EAN en formato texto nativo de CSV)
                     df_descarga = df_formato_solicitado.copy()
-                    # TRUCO EXCEL: Poner comillas al EAN para forzar a Excel en Windows a leerlo como texto y no acortar los números
-                    df_descarga['EAN'] = df_descarga['EAN'].apply(lambda x: f'"{x}"' if len(x) > 0 else x)
+                    df_descarga['EAN'] = df_descarga['EAN'].apply(lambda x: f"'\t{x}")
                     
-                    # Guardar en CSV estructurado con punto y coma (;) para que Excel lo abra con las columnas ya perfectas
+                    # Guardar en CSV estructurado con punto y coma (;)
                     csv_data = df_descarga.to_csv(index=False, sep=';', encoding='utf-8-sig')
                     
                     st.download_button(
