@@ -20,7 +20,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📊 Generador de Fichero de Roturas")
-st.write("Sube los archivos para extraer el listado formateado listo para revisión.")
+st.write("Sube los archivos para extraer el listado formateado listo para revisión e impresión.")
 
 st.subheader("📁 1. Cargar Archivos")
 file_folleto = st.file_uploader("Sube el Fichero del Folleto (SMS CON FOTO...)", type=["xlsx", "csv"], key="folleto")
@@ -41,63 +41,139 @@ if file_folleto and file_stock:
         # Validar que ambos tienen la columna clave 'ID'
         if 'ID' in df_folleto.columns and 'ID' in df_stock.columns:
             
-            # --- NORMALIZACIÓN DE IDs ---
-            # Pasamos a texto limpio quitando decimales ocultos (.0) para asegurar el cruce
-            df_folleto['ID'] = pd.to_numeric(df_folleto['ID'], errors='coerce').fillna(-1).astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
-            df_stock['ID'] = pd.to_numeric(df_stock['ID'], errors='coerce').fillna(-2).astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+            # --- SOLUCIÓN DEFINITIVA AL CRUCE DE IDs DECIMALES ---
+            # Forzamos la conversión a números flotantes limpios para que 766420.0 y 766420 sean tratados de forma idéntica matemáticamente
+            df_folleto['ID_match'] = pd.to_numeric(df_folleto['ID'], errors='coerce')
+            df_stock['ID_match'] = pd.to_numeric(df_stock['ID'], errors='coerce')
+
+            # Eliminar filas donde el ID no sea un número válido
+            df_folleto = df_folleto.dropna(subset=['ID_match'])
+            df_stock = df_stock.dropna(subset=['ID_match'])
 
             # Columnas requeridas del archivo 010
-            columnas_stock_necesarias = ['ID', 'EAN', 'Descripción Artículo', 'PVP normal', 'Stock Disp']
+            columnas_stock_necesarias = ['ID_match', 'ID', 'EAN', 'Descripción Artículo', 'PVP normal', 'Stock Disp']
             
-            # Verificar que existan en el archivo de stock
-            missing_cols = [col for col in columnas_stock_necesarias if col not in df_stock.columns]
+            # Verificar que existan en el archivo de stock original (menos ID_match que la creamos nosotros)
+            missing_cols = [col for col in ['ID', 'EAN', 'Descripción Artículo', 'PVP normal', 'Stock Disp'] if col not in df_stock.columns]
             
             if not missing_cols:
-                # --- CORRECCIÓN CRÍTICA DE STOCK ---
-                # Convertimos 'Stock Disp' a número. Si está vacío (NaN) o da error, lo convertimos en 0 de forma automática.
+                # --- TRATAMIENTO DE STOCK ---
+                # Convertimos 'Stock Disp' a número. Si está vacío (NaN), cuenta como 0 rotura.
                 df_stock['Stock Disp'] = pd.to_numeric(df_stock['Stock Disp'], errors='coerce').fillna(0)
 
-                # Limpieza estricta del EAN (Código de barras) para evitar formatos raros en pantalla
-                df_stock['EAN'] = pd.to_numeric(df_stock['EAN'], errors='coerce').fillna(0).astype(int).astype(str).str.strip()
-
-                # Cruzar primero el folleto completo con los datos de stock
-                df_cruce = pd.merge(df_folleto[['ID']], df_stock[columnas_stock_necesarias], on='ID', how='inner')
+                # Cruzar los archivos usando el ID matemático limpio
+                df_cruce = pd.merge(df_folleto[['ID_match']], df_stock[columnas_stock_necesarias], on='ID_match', how='inner')
                 
                 # Eliminar duplicados si un artículo viene repetido
-                df_cruce = df_cruce.drop_duplicates(subset=['ID'])
+                df_cruce = df_cruce.drop_duplicates(subset=['ID_match'])
 
-                # --- CORRECCIÓN DEL FILTRO DE ROTURAS ---
-                # Extraemos los artículos cuyo stock disponible sea menor o igual a 0
-                df_formato_solicitado = df_cruce[df_cruce['Stock Disp'] <= 0].copy()
+                # --- FILTRO REAL DE ROTURAS (Stock Disp <= 0) ---
+                df_roturas = df_cruce[df_cruce['Stock Disp'] <= 0].copy()
 
-                # Reordenar las columnas al formato exacto solicitado de 5 columnas
-                # Formato: EAN | ID | Descripción Artículo | PVP normal | Stock Disp
-                df_formato_solicitado = df_formato_solicitado[['EAN', 'ID', 'Descripción Artículo', 'PVP normal', 'Stock Disp']]
+                # Limpieza estricta y visual del EAN y del ID original para la pantalla
+                df_roturas['EAN'] = pd.to_numeric(df_roturas['EAN'], errors='coerce').fillna(0).astype(int).astype(str).str.strip()
+                df_roturas['ID'] = pd.to_numeric(df_roturas['ID'], errors='coerce').fillna(0).astype(int).astype(str).str.strip()
+
+                # Reordenar las columnas al formato exacto de 5 columnas solicitado
+                df_formato_solicitado = df_roturas[['EAN', 'ID', 'Descripción Artículo', 'PVP normal', 'Stock Disp']]
 
                 # --- MOSTRAR RESULTADOS ---
                 st.subheader("📊 2. Resumen de Alertas")
                 c1, c2 = st.columns(2)
-                c1.metric("Artículos en Folleto", len(df_folleto['ID'].unique()))
+                c1.metric("Artículos en Folleto", len(df_folleto['ID_match'].unique()))
                 c2.metric("Roturas de Folleto 🚨", len(df_formato_solicitado), delta_color="inverse")
 
                 st.subheader("📋 3. Vista Previa del Fichero de Roturas")
+                
                 if len(df_formato_solicitado) > 0:
-                    # Mostrar la tabla limpia en pantalla de forma nativa y perfecta
+                    # Mostrar la tabla limpia en pantalla de forma nativa
                     st.dataframe(df_formato_solicitado, use_container_width=True, hide_index=True)
                     
-                    # Preparación exclusiva para la descarga en Excel (Truco del formateo de celdas largas)
-                    df_descarga = df_formato_solicitado.copy()
-                    df_descarga['EAN'] = df_descarga['EAN'].apply(lambda x: f"'\t{x}")
+                    # --- BOTONES DE ACCIÓN ---
+                    st.subheader("🛠️ 4. Acciones")
+                    col_btn1, col_btn2 = st.columns(2)
                     
-                    # Guardar en CSV estructurado con punto y coma (;)
-                    csv_data = df_descarga.to_csv(index=False, sep=';', encoding='utf-8-sig')
+                    # 1. Botón para Descargar CSV (con formato texto para Excel)
+                    with col_btn1:
+                        df_descarga = df_formato_solicitado.copy()
+                        df_descarga['EAN'] = df_descarga['EAN'].apply(lambda x: f"'\t{x}")
+                        csv_data = df_descarga.to_csv(index=False, sep=';', encoding='utf-8-sig')
+                        st.download_button(
+                            label="📥 Descargar para Excel",
+                            data=csv_data,
+                            file_name="roturas_folleto_formato_final.csv",
+                            mime="text/csv",
+                        )
                     
-                    st.download_button(
-                        label="📥 Descargar Fichero de Roturas Formateado",
-                        data=csv_data,
-                        file_name="roturas_folleto_formato_final.csv",
-                        mime="text/csv",
-                    )
+                    # 2. Botón para Imprimir / Guardar en PDF
+                    with col_btn2:
+                        # Creamos una estructura HTML simple para mandarla al menú de impresión nativo
+                        html_table = df_formato_solicitado.to_html(index=False, classes='table')
+                        print_html = f"""
+                        <html>
+                        <head>
+                        <meta charset="utf-8">
+                        <style>
+                            body {{ font-family: Arial, sans-serif; margin: 20px; color: #333; }}
+                            h2 {{ text-align: center; color: #1E3A8A; }}
+                            table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
+                            th {{ background-color: #1E3A8A; color: white; padding: 10px; text-align: left; font-size: 14px; }}
+                            td {{ padding: 10px; border-bottom: 1px solid #ddd; font-size: 13px; }}
+                            tr:nth-child(even) {{ background-color: #f9f9f9; }}
+                        </style>
+                        </head>
+                        <body>
+                            <h2>📋 INFORME DE ROTURAS DE STOCK - FOLLETO ACTIVADO</h2>
+                            <p><strong>Total Roturas Detectadas:</strong> {len(df_formato_solicitado)} artículos</p>
+                            {html_table}
+                            <script>
+                                function abrirImpresion() {{
+                                    var vent = window.open('', '_blank');
+                                    vent.document.write({repr(html_table)});
+                                    vent.document.write('<style>body{{font-family:Arial;margin:30px}}h2{{color:#1E3A8A;text-align:center}}table{{width:100%;border-collapse:collapse}}th{{background:#1E3A8A;color:white;padding:10px;text-align:left}}td{{padding:10px;border-bottom:1px solid #ddd}}tr:nth-child(even){{background:#f9f9f9}}</style>');
+                                    vent.document.write('<h2>📋 INFORME DE ROTURAS DE STOCK</h2>');
+                                    vent.document.write(document.getElementsByTagName('table')[0].outerHTML);
+                                    vent.document.close();
+                                    vent.print();
+                                }}
+                            </script>
+                        </body>
+                        </html>
+                        """
+                        
+                        # Generación del script embebido seguro de Streamlit para llamar a la ventana de impresión
+                        if st.button("🖨️ Imprimir / Informe PDF"):
+                            st.components.v1.html(f"""
+                                <script>
+                                    var docHtml = `
+                                    <html>
+                                    <head>
+                                        <title>Informe de Roturas</title>
+                                        <style>
+                                            body {{ font-family: Arial, sans-serif; padding: 20px; }}
+                                            h2 {{ color: #1E3A8A; text-align: center; margin-bottom: 5px; }}
+                                            p {{ font-size: 14px; margin-bottom: 20px; color: #555; }}
+                                            table {{ width: 100%; border-collapse: collapse; }}
+                                            th {{ background: #1E3A8A; color: white; padding: 10px; text-align: left; font-size: 13px; }}
+                                            td {{ padding: 10px; border-bottom: 1px solid #ddd; font-size: 12px; }}
+                                            tr:nth-child(even) {{ background: #f9f9f9; }}
+                                        </style>
+                                    </head>
+                                    <body>
+                                        <h2>📋 LISTADO DE ROTURAS DE STOCK - FOLLETO</h2>
+                                        <p>Generado automáticamente. Total artículos agotados: {len(df_formato_solicitado)}</p>
+                                        {html_table}
+                                    </body>
+                                    </html>
+                                    `;
+                                    var ventana = window.open('', '_blank');
+                                    ventana.document.write(docHtml);
+                                    ventana.document.close();
+                                    ventana.focus();
+                                    setTimeout(function() {{ ventana.print(); }}, 500);
+                                </script>
+                            """, height=0, width=0)
+                            
                 else:
                     st.success("✅ ¡Todo en orden! Todos los artículos del folleto tienen Stock Disponible en tienda.")
             else:
