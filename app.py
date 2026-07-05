@@ -125,7 +125,8 @@ if file_folleto and file_stock:
             st.subheader("📊 2. Resumen de Alertas")
             c1, c2 = st.columns(2)
             c1.metric("Artículos en Folleto", len(df_folleto['ID_limpio'].unique()))
-            c2.metric("Roturas de Folleto (Stock <= 2) 🚨", len(df_formato_pantalla), delta_color="inverse")
+            # Nombre modificado aquí: Eliminado "(Stock <= 2)"
+            c2.metric("Roturas de Folleto 🚨", len(df_formato_pantalla), delta_color="inverse")
 
             st.subheader("📋 3. Vista Previa del Fichero de Roturas")
             
@@ -166,7 +167,7 @@ if file_folleto and file_stock:
                     </tr>
                     """
 
-                # Documento HTML final para imprimir con nombre exacto solicitado
+                # Documento HTML final para imprimir
                 html_impresion = f"""
                 <!DOCTYPE html>
                 <html>
@@ -194,64 +195,4 @@ if file_folleto and file_stock:
                     </style>
                 </head>
                 <body>
-                    <div class="header-container">
-                        <h2>📋 INFORME COMPLETADO DE ROTURAS</h2>
-                        <p class="sub">Total alertas detectadas para revisión: <b>{len(df_roturas)}</b></p>
-                    </div>
-                    
-                    <table>
-                        <thead>
-                            <tr>
-                                <th style="width: 18%;">CÓDIGO BARRAS (PANCHAR)</th>
-                                <th>EAN</th>
-                                <th>ID</th>
-                                <th>DESCRIPCIÓN ARTÍCULO</th>
-                                <th style="text-align: right;">PVP</th>
-                                <th style="text-align: center;">STOCK</th>
-                                <th style="text-align: center;">UDS/CAJA</th>
-                                <th style="text-align: center;">FAP</th>
-                                <th>UBICACIÓN</th>
-                                <th>PROMOCIÓN</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filas_html}
-                        </tbody>
-                    </table>
-                    <script>
-                        window.onload = function() {{
-                            setTimeout(function() {{ window.print(); }}, 500);
-                        }};
-                    </script>
-                </body>
-                </html>
-                """
-
-                # Botón de impresión seguro embebido
-                st.components.v1.html(f"""
-                    <html>
-                    <body>
-                        <button onclick="abrirInforme()" style="display: block; width: 100%; background-color: #1E3A8A; color: white; text-align: center; padding: 14px; font-size: 16px; font-weight: bold; border-radius: 10px; font-family: Arial, sans-serif; border: none; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                           🖨️ IMPRIMIR / VER INFORME COMPLETO CON CÓDIGOS DE BARRAS
-                        </button>
-                        <script>
-                            function abrirInforme() {{
-                                var ventana = window.open('', '_blank');
-                                ventana.document.write(document.getElementById('html_code').value);
-                                ventana.document.close();
-                            }}
-                        </script>
-                        <textarea id="html_code" style="display:none;">{html_impresion.replace('</script>', '<\\/script>')}</textarea>
-                    </body>
-                    </html>
-                """, height=65)
-
-            else:
-                st.success("✅ ¡Todo en orden! Ningún artículo del folleto tiene un Stock Disponible menor o igual a 2.")
-        else:
-            st.error("❌ Error: No se encontraron las columnas obligatorias necesarias (ID, EAN, Descripción, PVP normal o Stock Disp) en los ficheros.")
-            
-    except Exception as e:
-        st.error(f"Ocurrió un error en el procesado técnico: {e}")
-else:
-    st.info("💡 Sube ambos ficheros para generar automáticamente el documento con la estructura solicitada.")
+                    <div class="header-container
