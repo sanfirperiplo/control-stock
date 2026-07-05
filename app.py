@@ -20,7 +20,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 Generador de Fichero de Roturas")
+# Título principal modificado según tu solicitud
+st.title("📊 FICHERO ROTURAS DE FOLLETO")
 st.write("Sube los archivos para extraer el listado formateado listo para revisión e impresión con códigos escaneables.")
 
 st.subheader("📁 1. Cargar Archivos")
@@ -100,7 +101,7 @@ if file_folleto and file_stock:
             # --- CONVERSIÓN DE STOCK ---
             df_cruce['Stock_Numerico'] = pd.to_numeric(df_cruce[col_stock], errors='coerce').fillna(0)
 
-            # --- FILTRO DE CRITERIO SOLICITADO: Stock Disp <= 2 ---
+            # --- FILTRO DE CRITERIO: Stock Disp <= 2 ---
             df_roturas = df_cruce[df_cruce['Stock_Numerico'] <= 2].copy()
 
             # Limpieza estética de códigos EAN e ID
@@ -113,7 +114,7 @@ if file_folleto and file_stock:
             df_roturas['UBI_val'] = df_roturas[col_ubi].fillna('-').astype(str) if col_ubi else '-'
             df_roturas['PROMO_val'] = df_roturas[col_promo].fillna('-').astype(str) if col_promo else '-'
 
-            # Formato de visualización plano en la web (5 columnas para mantener limpia la interfaz móvil)
+            # Formato de visualización plano en la web (5 columnas)
             df_formato_pantalla = pd.DataFrame({
                 'EAN': df_roturas['EAN_Limpiado'],
                 'ID': df_roturas['ID_Final'],
@@ -136,9 +137,9 @@ if file_folleto and file_stock:
                 # --- BOTONES DE ACCIÓN E IMPRESIÓN ---
                 st.subheader("🛠️ 4. Acciones e Impresión")
                 
-                # 1. GENERACIÓN DEL EXCEL (CSV COMPLETO CON EL MISMO FORMATO DE IMPRESIÓN)
+                # 1. GENERACIÓN DEL EXCEL COMPLETO (10 columnas idénticas al formato de impresión)
                 df_excel_completo = pd.DataFrame({
-                    'CÓDIGO BARRAS (PANCHAR)': df_roturas['EAN_Limpiado'].apply(lambda x: f"'\t{x}"), # Formato texto plano anti-deformación de Excel
+                    'CÓDIGO BARRAS (PANCHAR)': df_roturas['EAN_Limpiado'].apply(lambda x: f"'\t{x}"),
                     'EAN': df_roturas['EAN_Limpiado'].apply(lambda x: f"'\t{x}"),
                     'ID': df_roturas['ID_Final'],
                     'DESCRIPCIÓN ARTÍCULO': df_roturas[col_desc],
@@ -155,60 +156,4 @@ if file_folleto and file_stock:
                     label="📥 Descargar Fichero Completo para Excel",
                     data=csv_data,
                     file_name="roturas_folleto_formato_final.csv",
-                    mime="text/csv",
-                )
-                
-                st.write("") 
-
-                # 2. GENERACIÓN DE LA TABLA HTML PARA IMPRESIÓN
-                filas_html = ""
-                for idx, fila in df_roturas.iterrows():
-                    filas_html += f"""
-                    <tr>
-                        <td class="barcode-cell">{fila['EAN_Limpiado']}</td>
-                        <td>{fila['EAN_Limpiado']}</td>
-                        <td>{fila['ID_Final']}</td>
-                        <td>{fila[col_desc]}</td>
-                        <td style="text-align: right;">{fila[col_pvp]}</td>
-                        <td style="text-align: center; font-weight: bold; color: #DC2626;">{int(fila['Stock_Numerico'])}</td>
-                        <td style="text-align: center; font-weight: bold; color: #1E3A8A;">{fila['PCB_val']}</td>
-                        <td style="text-align: center;">{fila['FAP_val']}</td>
-                        <td>{fila['UBI_val']}</td>
-                        <td style="font-size: 11px; color: #1E3A8A;">{fila['PROMO_val']}</td>
-                    </tr>
-                    """
-
-                html_cabecera = """<!DOCTYPE html><html><head><meta charset="utf-8"><title>INFORME COMPLETADO DE ROTURAS</title><link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+128&display=swap" rel="stylesheet"><style>body { font-family: 'Helvetica Neue', Arial, sans-serif; padding: 10px; color: #333; } .header-container { text-align: center; margin-bottom: 25px; border-bottom: 3px solid #1E3A8A; padding-bottom: 10px; } h2 { color: #1E3A8A; margin: 0; font-size: 20px; text-transform: uppercase; } p.sub { font-size: 14px; color: #666; margin: 5px 0 0 0; } table { width: 100%; border-collapse: collapse; margin-top: 10px; } th { background-color: #1E3A8A; color: white; padding: 10px 4px; text-align: left; font-size: 11px; text-transform: uppercase; } td { padding: 8px 4px; border-bottom: 1px solid #E5E7EB; font-size: 11px; vertical-align: middle; } tr:nth-child(even) { background-color: #F9FAFB; } .barcode-cell { font-family: 'Libre Barcode 128', sans-serif; font-size: 44px; padding: 0px 4px; line-height: 1; letter-spacing: 0px; white-space: nowrap; }</style></head><body><div class="header-container"><h2>📋 INFORME COMPLETADO DE ROTURAS</h2>"""
-                html_cuerpo = f"""<p class="sub">Total alertas detectadas para revisión: <b>{len(df_roturas)}</b></p></div><table><thead><tr><th style="width: 18%;">CÓDIGO BARRAS (PANCHAR)</th><th>EAN</th><th>ID</th><th>DESCRIPCIÓN ARTÍCULO</th><th style="text-align: right;">PVP</th><th style="text-align: center;">STOCK</th><th style="text-align: center;">UDS/CAJA</th><th style="text-align: center;">FAP</th><th>UBICACIÓN</th><th>PROMOCIÓN</th></tr></thead><tbody>{filas_html}</tbody></table>"""
-                html_cierre = """<script>window.onload = function() { setTimeout(function() { window.print(); }, 500); };</script></body></html>"""
-                
-                html_impresion = html_cabecera + html_cuerpo + html_cierre
-                html_b64 = base64.b64encode(html_impresion.encode('utf-8')).decode('utf-8')
-
-                st.components.v1.html(f"""
-                    <html>
-                    <body>
-                        <button onclick="abrirInforme()" style="display: block; width: 100%; background-color: #1E3A8A; color: white; text-align: center; padding: 14px; font-size: 16px; font-weight: bold; border-radius: 10px; font-family: Arial, sans-serif; border: none; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                           🖨️ IMPRIMIR / VER INFORME COMPLETO CON CÓDIGOS DE BARRAS
-                        </button>
-                        <script>
-                            function abrirInforme() {{
-                                var ventana = window.open('', '_blank');
-                                var contenido = atob("{html_b64}");
-                                ventana.document.write(contenido);
-                                ventana.document.close();
-                            }}
-                        </script>
-                    </body>
-                    </html>
-                """, height=65)
-
-            else:
-                st.success("✅ ¡Todo en orden! Ningún artículo del folleto tiene un Stock Disponible crítico.")
-        else:
-            st.error("❌ Error: No se encontraron las columnas obligatorias necesarias (ID, EAN, Descripción, PVP normal o Stock Disp) en los ficheros.")
-            
-    except Exception as e:
-        st.error(f"Ocurrió un error en el procesado técnico: {e}")
-else:
-    st.info("💡 Sube ambos ficheros para generar automáticamente el documento con la estructura solicitada.")
+                    mime="text/csv
