@@ -38,7 +38,7 @@ if file_folleto and file_stock:
             for col in df.columns:
                 col_limpia = str(col).strip().lower()
                 col_limpia = col_limpia.replace('á', 'a').replace('é', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u')
-                col_limpia = col_limpia.replace('/', ' ') # Eliminar barra diagonal para facilitar emparejamiento de PCB
+                col_limpia = col_limpia.replace('/', ' ')
                 mapeo[col_limpia] = col
             return mapeo
 
@@ -99,7 +99,7 @@ if file_folleto and file_stock:
             # --- CONVERSIÓN DE STOCK ---
             df_cruce['Stock_Numerico'] = pd.to_numeric(df_cruce[col_stock], errors='coerce').fillna(0)
 
-            # --- FILTRO CRÍTICO SOLICITADO: Stock Disponible <= 2 ---
+            # --- FILTRO DE CRITERIO SOLICITADO: Stock Disp <= 2 ---
             df_roturas = df_cruce[df_cruce['Stock_Numerico'] <= 2].copy()
 
             # Limpieza estética de códigos EAN e ID
@@ -166,7 +166,7 @@ if file_folleto and file_stock:
                     </tr>
                     """
 
-                # Documento HTML final con ancho y estilos ajustados
+                # Documento HTML final para imprimir
                 html_impresion = f"""
                 <!DOCTYPE html>
                 <html>
@@ -254,3 +254,4 @@ if file_folleto and file_stock:
     except Exception as e:
         st.error(f"Ocurrió un error en el procesado técnico: {e}")
 else:
+    st.info("💡 Sube ambos ficheros para generar automáticamente el documento con la estructura solicitada.")
