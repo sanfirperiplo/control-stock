@@ -41,9 +41,18 @@ if file_folleto and file_stock:
         # Validar que ambos tienen la columna clave 'ID'
         if 'ID' in df_folleto.columns and 'ID' in df_stock.columns:
             
-            # Homologar el formato del ID para el cruce
-            df_folleto['ID'] = df_folleto['ID'].astype(str).str.strip()
-            df_stock['ID'] = df_stock['ID'].astype(str).str.strip()
+            # --- TRATAMIENTO MATEMÁTICO BLINDADO PARA LOS IDs ---
+            # Pasamos a numérico ignorando errores y luego a enteros/texto limpios para que 24.1 o 24 coincidan exactamente
+            def normalizar_id(df, columna):
+                df[columna] = pd.to_numeric(df[columna], errors='coerce')
+                # Quitamos filas sin ID válido para evitar fallos
+                df = df.dropna(subset=[columna])
+                # Convertimos a string formateando el número para eliminar cualquier rastro de .0 o flotantes
+                df[columna] = df[columna].apply(lambda x: f"{int(x)}" if x.is_integer() else f"{x}").str.strip()
+                return df
+
+            df_folleto = normalizar_id(df_folleto, 'ID')
+            df_stock = normalizar_id(df_stock, 'ID')
 
             # Columnas requeridas del archivo de stock (010) según tu formato solicitado
             columnas_stock_necesarias = ['ID', 'EAN', 'Descripción Artículo', 'PVP normal', 'Stock Disp']
@@ -53,24 +62,26 @@ if file_folleto and file_stock:
             
             if not missing_cols:
                 # Filtrar solo el stock del archivo 010 donde haya rotura (Stock Disp <= 0)
-                # Nota: Si una celda está vacía en Stock Disp, la consideramos como 0
                 df_stock['Stock Disp'] = pd.to_numeric(df_stock['Stock Disp'], errors='coerce').fillna(0)
                 df_stock_roturas = df_stock[df_stock['Stock Disp'] <= 0].copy()
 
-                # Asegurar formato limpio para el código de barras (EAN) sin exponenciales ni decimales
-                df_stock_roturas['EAN'] = df_stock_roturas['EAN'].astype(str).str.replace('.0', '', regex=False).str.strip()
+                # Limpieza estricta del EAN (Código de barras) para que no salga con notación científica
+                df_stock_roturas['EAN'] = pd.to_numeric(df_stock_roturas['EAN'], errors='coerce').fillna(0).astype(int).astype(str).str.strip()
 
-                # Cruzar con el folleto para asegurarnos de extraer SOLO los que están en promoción activa
+                # Cruzar con el folleto para extraer SOLO los artículos que están en promoción activa
                 df_final_roturas = pd.merge(df_folleto[['ID']], df_stock_roturas[columnas_stock_necesarias], on='ID', how='inner')
 
-                # Reordenar las columnas exactamente al formato solicitado en la imagen
+                # Eliminar posibles filas duplicadas si un artículo aparece repetido en los listados
+                df_final_roturas = df_final_roturas.drop_duplicates(subset=['ID'])
+
+                # Reordenar las columnas exactamente al formato solicitado de 5 columnas
                 # Formato: EAN | ID | Descripción Artículo | PVP normal | Stock Disp
                 df_formato_solicitado = df_final_roturas[['EAN', 'ID', 'Descripción Artículo', 'PVP normal', 'Stock Disp']]
 
                 # --- MOSTRAR RESULTADOS ---
                 st.subheader("📊 2. Resumen de Alertas")
                 c1, c2 = st.columns(2)
-                c1.metric("Artículos en Folleto", len(df_folleto))
+                c1.metric("Artículos en Folleto", len(df_folleto['ID'].unique()))
                 c2.metric("Roturas de Folleto 🚨", len(df_formato_solicitado), delta_color="inverse")
 
                 st.subheader("📋 3. Vista Previa del Fichero de Roturas")
@@ -78,8 +89,13 @@ if file_folleto and file_stock:
                     # Mostrar la tabla en la app (PC/Móvil)
                     st.dataframe(df_formato_solicitado, use_container_width=True, hide_index=True)
                     
-                    # Guardar en CSV estructurado con punto y coma (;) para que Excel lo abra perfecto
-                    csv_data = df_formato_solicitado.to_csv(index=False, sep=';', encoding='utf-8-sig')
+                    # Preparación especial para la descarga
+                    df_descarga = df_formato_solicitado.copy()
+                    # TRUCO EXCEL: Añadir una pestaña invisible de texto al EAN para obligar a Excel a leerlo como texto y no cortar los ceros iniciales
+                    df_descarga['EAN'] = df_descarga['EAN'].apply(lambda x: f'"{x}"' if len(x) > 0 else x)
+                    
+                    # Guardar en CSV estructurado con punto y coma (;) para que Excel en Windows/Mac lo abra perfecto directamente
+                    csv_data = df_descarga.to_csv(index=False, sep=';', encoding='utf-8-sig')
                     
                     st.download_button(
                         label="📥 Descargar Fichero de Roturas Formateado",
@@ -88,7 +104,7 @@ if file_folleto and file_stock:
                         mime="text/csv",
                     )
                 else:
-                    st.success("✅ ¡Todo en orden! Todos los artículos del folleto tienen Stock Disp mayor a 0.")
+                    st.success("✅ ¡Todo en orden! Todos los artículos del folleto tienen Stock Disponible en tienda.")
             else:
                 st.error(f"❌ El archivo de stock (010) no contiene todas las columnas requeridas. Faltan: {missing_cols}")
         else:
@@ -98,4 +114,3 @@ if file_folleto and file_stock:
         st.error(f"Ocurrió un error en el procesado: {e}")
 else:
     st.info("💡 Sube ambos ficheros para generar automáticamente el documento con la estructura de 5 columnas solicitada.")
-    
